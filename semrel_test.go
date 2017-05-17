@@ -144,7 +144,7 @@ func TestCreateRelease(t *testing.T) {
 	repo, ts := getNewTestRepo(t)
 	defer ts.Close()
 	newVersion, _ := semver.NewVersion("2.0.0")
-	err := repo.CreateRelease([]*Commit{}, &Release{}, newVersion)
+	err := repo.CreateRelease([]*Commit{}, &CurCommitDetails{}, newVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,16 +156,16 @@ func TestCaluclateChange(t *testing.T) {
 		{SHA: "b", Change: Change{false, true, false}},
 		{SHA: "c", Change: Change{false, false, true}},
 	}
-	change := CaluclateChange(commits, &Release{})
+	change := CaluclateChange(commits, &CurCommitDetails{})
 	if !change.Major || !change.Minor || !change.Patch {
 		t.Fail()
 	}
-	change = CaluclateChange(commits, &Release{SHA: "a"})
+	change = CaluclateChange(commits, &CurCommitDetails{LastTagSHA: "a"})
 	if change.Major || change.Minor || change.Patch {
 		t.Fail()
 	}
 	version, _ := semver.NewVersion("1.0.0")
-	newVersion := GetNewVersion(commits, &Release{SHA: "b", Version: version})
+	newVersion := GetNewVersion(commits, &CurCommitDetails{LastTagSHA: "b", LastTagVersion: version})
 	if newVersion.String() != "2.0.0" {
 		t.Fail()
 	}
@@ -205,7 +205,7 @@ func TestGetChangelog(t *testing.T) {
 		{SHA: "12345678", Type: "chore", Scope: "", Message: "commit message", Raw: []string{"", "BREAKING CHANGE: test"}, Change: Change{Major: true}},
 		{SHA: "stop", Type: "chore", Scope: "", Message: "not included"},
 	}
-	latestRelease := &Release{SHA: "stop"}
+	latestRelease := &CurCommitDetails{LastTagSHA: "stop"}
 	newVersion, _ := semver.NewVersion("2.0.0")
 	changelog := GetChangelog(commits, latestRelease, newVersion)
 	if !strings.Contains(changelog, "* **app:** commit message (12345678)") ||

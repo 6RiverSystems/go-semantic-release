@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"gopkg.in/src-d/go-git.v4"
 )
 
 var SRVERSION string
@@ -50,11 +51,14 @@ func main() {
 		exitIfError(errors.New("slug missing"))
 	}
 
-	repo, err := semrel.NewRepository(context.TODO(), *slug, *token)
+	ghRepo, err := semrel.NewRepository(context.TODO(), *slug, *token)
+	exitIfError(err)
+
+	localRepo, err := git.PlainOpen(".")
 	exitIfError(err)
 
 	logger.Println("getting default branch...")
-	defaultBranch, isPrivate, err := repo.GetInfo()
+	defaultBranch, isPrivate, err := ghRepo.GetInfo()
 	exitIfError(err)
 	logger.Println("found default branch: " + defaultBranch)
 
@@ -64,16 +68,16 @@ func main() {
 	}
 
 	logger.Println("getting latest release...")
-	release, err := repo.GetLatestRelease()
+	curCommitDetails, err := semrel.GetCurCommitDetails(localRepo)
 	exitIfError(err)
-	logger.Println("found version: " + release.Version.String())
+	logger.Println("found version: " + curCommitDetails.LastTagVersion.String())
 
 	logger.Println("getting commits...")
-	commits, err := repo.GetCommits()
+ 	change, err := semrel.ParseCommitsSince(curCommitDetails)
 	exitIfError(err)
 
 	logger.Println("calculating new version...")
-	newVer := semrel.GetNewVersion(commits, release)
+	newVer := semrel.GetNewVersion(curCommitDetails, change)
 	if newVer == nil {
 		exitIfError(errors.New("no change"))
 	}
@@ -84,10 +88,10 @@ func main() {
 	}
 
 	logger.Println("creating release...")
-	exitIfError(repo.CreateRelease(commits, release, newVer))
+	exitIfError(ghRepo.CreateRelease(change, curCommitDetails, newVer))
 
 	if *ghr {
-		exitIfError(ioutil.WriteFile(".ghr", []byte(fmt.Sprintf("-u %s -r %s v%s", repo.Owner, repo.Repo, newVer.String())), 0644))
+		exitIfError(ioutil.WriteFile(".ghr", []byte(fmt.Sprintf("-u %s -r %s v%s", ghRepo.Owner, ghRepo.Repo, newVer.String())), 0644))
 	}
 
 	if *vFile {
