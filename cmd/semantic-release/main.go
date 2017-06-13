@@ -5,12 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/semantic-release/go-semantic-release"
-	"github.com/semantic-release/go-semantic-release/condition"
-	"github.com/semantic-release/go-semantic-release/update"
 	"io/ioutil"
 	"log"
 	"os"
+
+	"github.com/semantic-release/go-semantic-release"
+	"github.com/semantic-release/go-semantic-release/condition"
+	"github.com/semantic-release/go-semantic-release/update"
 	"gopkg.in/src-d/go-git.v4"
 )
 
@@ -70,14 +71,18 @@ func main() {
 	logger.Println("getting latest release...")
 	curCommitDetails, err := semrel.GetCurCommitDetails(localRepo)
 	exitIfError(err)
-	logger.Println("found version: " + curCommitDetails.LastTagVersion.String())
+
+	logger.Println("getting tags...")
+	tags, err := semrel.GetTags(ghRepo)
+	exitIfError(err)
 
 	logger.Println("getting commits...")
- 	change, err := semrel.ParseCommitsSince(curCommitDetails)
+	change, lastTag, err := semrel.ParseHistory(ghRepo, curCommitDetails, tags)
+	logger.Println("found version: " + lastTag.Version.String())
 	exitIfError(err)
 
 	logger.Println("calculating new version...")
-	newVer := semrel.GetNewVersion(curCommitDetails, change)
+	newVer := semrel.GetNewVersion(curCommitDetails, lastTag, change)
 	if newVer == nil {
 		exitIfError(errors.New("no change"))
 	}

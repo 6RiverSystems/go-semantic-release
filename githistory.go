@@ -1,25 +1,22 @@
 package semrel
 
 import (
-	"os/exec"
-	"bytes"
-	"strings"
-	"log"
-	"github.com/Masterminds/semver"
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing/object"
-	"regexp"
-	"gopkg.in/src-d/go-git.v4/plumbing"
 	"fmt"
+	"log"
+	"regexp"
+	"strings"
+
+	"github.com/Masterminds/semver"
+	"github.com/google/go-github/github"
+	"gopkg.in/src-d/go-git.v4"
 )
 
 var commitPattern = regexp.MustCompile("^(\\w*)(?:\\((.*)\\))?\\: (.*)$")
 var breakingPattern = regexp.MustCompile("BREAKING CHANGES?")
 
-
 type Change struct {
 	Major, Minor, Patch bool
-	TypeScopeMap map[string]string
+	TypeScopeMap        map[string]string
 }
 
 type Commit struct {
@@ -32,80 +29,26 @@ type Commit struct {
 }
 
 type CurCommitDetails struct {
-	LastTagSHA     	string
-	LastTagVersion 	*semver.Version
-	CurrentBranch  	string
-	CurrentSHA	string
+	CurrentBranch string
+	CurrentSHA    string
 }
 
-func GetCmdResult(name string, arg ...string) (string, error) {
-
-	cmd := exec.Command(name, arg...)
-
-	var outbuf, errbuf bytes.Buffer
-	cmd.Stdout = &outbuf
-	cmd.Stderr = &errbuf
-
-	err := cmd.Start()
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-	err = cmd.Wait()
-
-	if (err != nil) {
-		log.Println(errbuf.String())
-		log.Println(err)
-		return "", err
-	}
-
-	return strings.TrimSpace(outbuf.String()), nil
+type Tag struct {
+	SHA     string
+	Version *semver.Version
 }
 
 func GetCurCommitDetails(repo *git.Repository) (*CurCommitDetails, error) {
 
-	// Setup default values
-	lastTagSha := ""
-	version := &semver.Version{}
-
-	lastTag, err := GetCmdResult("git", "describe", "--tags", "--abbrev=0", "HEAD")
-
-	if err == nil {
-		tagRef, err := repo.Reference(plumbing.ReferenceName("refs/tags/" + lastTag), true)
-
-		if err == nil {
-			tag, err := repo.TagObject(tagRef.Hash())
-
-			if err != nil {
-				//return nil, err
-			}
-
-			lastTagSha = tag.Target.String()
-
-			version, err = semver.NewVersion(lastTag)
-			if err != nil {
-				return nil, err
-			}
-
-		} else {
-			//return nil, err
-		}
-
-	} else {
-		//return nil, err
-	}
-
-
 	headRef, err := repo.Head()
+
 	if err != nil {
 		return nil, err
 	}
 
 	return &CurCommitDetails{
-		LastTagSHA:     lastTagSha,
-		LastTagVersion: version,
-		CurrentBranch:  headRef.Name().Short(),
-		CurrentSHA:     headRef.Hash().String(),
+		CurrentBranch: headRef.Name().Short(),
+		CurrentSHA:    headRef.Hash().String(),
 	}, nil
 }
 
@@ -125,10 +68,10 @@ func formatCommit(c *Commit) string {
 	return ret
 }
 
-func parseCommit(commit *object.Commit) *Commit {
+func parseCommit(commit *github.RepositoryCommit) *Commit {
 	c := new(Commit)
-	c.SHA = commit.Hash.String()
-	c.Raw = strings.Split(commit.Message, "\n")
+	c.SHA = *commit.SHA
+	c.Raw = strings.Split(*commit.Commit.Message, "\n")
 	log.Println("Examining:", c.SHA, c.Raw[0])
 	found := commitPattern.FindAllStringSubmatch(c.Raw[0], -1)
 	if len(found) < 1 {
@@ -138,7 +81,7 @@ func parseCommit(commit *object.Commit) *Commit {
 	c.Scope = found[0][2]
 	c.Message = found[0][3]
 	c.Change = Change{
-		Major: breakingPattern.MatchString(commit.Message),
+		Major: breakingPattern.MatchString(*commit.Commit.Message),
 		Minor: c.Type == "feat",
 		Patch: c.Type == "fix",
 	}
@@ -161,31 +104,110 @@ func CalculateChange(change Change, commit *Commit, latestRelease *CurCommitDeta
 	return change
 }
 
-func ParseCommitsSince(latestRelease *CurCommitDetails) (*Change, error) {
+func ParseHistory(ghRepo *Repository, latestRelease *CurCommitDetails, tags []*Tag) (*Change, *Tag, error) {
 
-	repo, err := git.PlainOpen(".")
+	//version := &semver.Version{}
+	//version, err = semver.NewVersion(lastTagName)
 
-	if (err != nil) {
-		return nil, err
+	opts := &github.CommitsListOptions{
+		SHA: latestRelease.CurrentSHA,
 	}
 
-	opts := &git.LogOptions{
+	var lastTag *Tag
+
+	var allCommits []*github.RepositoryCommit
+
+	for {
+		commits, resp, err :=
+			ghRepo.Client.Repositories.ListCommits(ghRepo.Ctx, ghRepo.Owner, ghRepo.Repo, opts)
+
+		if err != nil {
+			return nil, nil, err
+		}
+
+		stopIdx := len(commits)
+
+		for i, commit := range commits {
+
+			for _, tag := range tags {
+				if *commit.SHA == tag.SHA {
+					log.Println("Found last tag: " + tag.Version.String())
+					lastTag = tag
+					stopIdx = i + 1
+					break
+				}
+			}
+
+			if lastTag != nil {
+				break
+			}
+		}
+
+		if lastTag == nil {
+			log.Println("No last tag found, need to make one up")
+		}
+
+		allCommits = append(allCommits, commits[:stopIdx]...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+
+		opts.Page = resp.NextPage
 	}
 
-	cIter, err := repo.Log(opts)
-
-	if (err != nil) {
-		return nil, err
-	}
-
-	change := Change {
+	change := Change{
 		TypeScopeMap: make(map[string]string),
 	}
 
-	err = cIter.ForEach(func(c *object.Commit) error {
+	for _, c := range allCommits {
 		change = CalculateChange(change, parseCommit(c), latestRelease)
-		return nil
-	})
+	}
 
-	return &change, nil
+	return &change, lastTag, nil
+}
+
+func GetTags(ghRepo *Repository) ([]*Tag, error) {
+
+	opts := &github.ReferenceListOptions{
+		Type: "tags",
+	}
+
+	var allRefs []*github.Reference
+
+	for {
+		refs, resp, err :=
+			ghRepo.Client.Git.ListRefs(ghRepo.Ctx, ghRepo.Owner, ghRepo.Repo, opts)
+
+		if err != nil {
+			return nil, err
+		}
+
+		allRefs = append(allRefs, refs...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+
+		opts.Page = resp.NextPage
+	}
+
+	var tags []*Tag
+
+	for _, ref := range allRefs {
+
+		versionStr := strings.TrimPrefix(*ref.Ref, "refs/tags/")
+
+		version, err := semver.NewVersion(versionStr)
+
+		if err == nil {
+			tags = append(tags, &Tag{
+				SHA:     *ref.Object.SHA,
+				Version: version,
+			})
+		}
+
+	}
+
+	return tags, nil
 }

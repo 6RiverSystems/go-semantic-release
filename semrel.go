@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/Masterminds/semver"
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
-	"sort"
-	"strings"
-	"time"
-	"strconv"
 )
 
 type Repository struct {
@@ -48,8 +49,8 @@ func (repo *Repository) CreateRelease(change *Change, details *CurCommitDetails,
 	changelog := GetChangelog(change, details, newVersion)
 	opts := &github.RepositoryRelease{
 		TargetCommitish: &details.CurrentSHA,
-		TagName: &tag,
-		Body:    &changelog,
+		TagName:         &tag,
+		Body:            &changelog,
 	}
 	_, _, err := repo.Client.Repositories.CreateRelease(repo.Ctx, repo.Owner, repo.Repo, opts)
 	if err != nil {
@@ -58,11 +59,11 @@ func (repo *Repository) CreateRelease(change *Change, details *CurCommitDetails,
 	return nil
 }
 
-func CalculatePrerelease(details *CurCommitDetails) string {
+func CalculatePrerelease(latestRelease *CurCommitDetails, lastVersion semver.Version) string {
 
 	prerelease := ""
 
-	switch (details.CurrentBranch) {
+	switch latestRelease.CurrentBranch {
 	// If branch is master -> no pre-release version
 	case "master":
 		return ""
@@ -70,52 +71,51 @@ func CalculatePrerelease(details *CurCommitDetails) string {
 	case "develop":
 		prerelease = "beta"
 	default:
-		prerelease = details.CurrentBranch
+		prerelease = latestRelease.CurrentBranch
 	}
 
-
 	// if else, prerelease = branch
-	oldPrereleaseParts := strings.Split(details.LastTagVersion.Prerelease(), ".")
+	oldPrereleaseParts := strings.Split(lastVersion.Prerelease(), ".")
 
-	if (oldPrereleaseParts[0] != prerelease) {
-		return prerelease + ".1";
+	if oldPrereleaseParts[0] != prerelease {
+		return prerelease + ".1"
 	} else {
 		subver, err := strconv.Atoi(oldPrereleaseParts[1])
 
-		if (err != nil) {
+		if err != nil {
 			// What now?
 		}
 
-		return prerelease + "." + strconv.Itoa(subver + 1)
+		return prerelease + "." + strconv.Itoa(subver+1)
 	}
 }
 
-func GetNewVersion(latestRelease *CurCommitDetails, change *Change) *semver.Version {
-	version := latestRelease.LastTagVersion;
+func GetNewVersion(latestRelease *CurCommitDetails, lastTag *Tag, change *Change) *semver.Version {
+	lastVersion := *lastTag.Version
 
-	if version.Major() == 0 {
+	if lastVersion.Major() == 0 {
 		change.Major = true
 	}
 
 	var newVersion semver.Version
 	switch {
 	case change.Major:
-		newVersion = version.IncMajor()
+		newVersion = lastVersion.IncMajor()
 		break
 	case change.Minor:
-		newVersion = version.IncMinor()
+		newVersion = lastVersion.IncMinor()
 		break
 	case change.Patch:
-		newVersion = version.IncPatch()
+		newVersion = lastVersion.IncPatch()
 		break
 	default:
 		return nil
 	}
 
-	prerelease := CalculatePrerelease(latestRelease)
+	prerelease := CalculatePrerelease(latestRelease, lastVersion)
 	newVersion, err := newVersion.SetPrerelease(prerelease)
 
-	if (err != nil) {
+	if err != nil {
 		// TODO: handle it
 	}
 
