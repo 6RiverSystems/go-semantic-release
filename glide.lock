@@ -1,5 +1,5 @@
 hash: 570d64dbf60c24451ce7e4b802e2980b9e5d019fc23d0d5513694cc9b936668b
-updated: 2017-05-16T11:37:28.985338593-04:00
+updated: 2017-06-12T22:29:36.488212228-04:00
 imports:
 - name: github.com/Ableton/go-travis
   version: 1cdf3cca2f3ac6e6af8df7a2567d8cd0f402c942
@@ -31,10 +31,8 @@ imports:
   - scanner
   - token
   - types
-- name: github.com/src-d/go-git
-  version: 681f24d65046397228b4e4bb4e248fdb1e27f347
-  subpackages:
-  - plumbing/object
+- name: github.com/xanzy/ssh-agent
+  version: ba9c9e33906f58169366275e3450db66139a31a9
 - name: golang.org/x/crypto
   version: ab89591268e0c8b748cbe4047b00197516011af5
   subpackages:
@@ -69,7 +67,7 @@ imports:
   subpackages:
   - osfs
 - name: gopkg.in/src-d/go-git.v4
-  version: 681f24d65046397228b4e4bb4e248fdb1e27f347
+  version: 2a00316b65585be2bf68e1ea9c0e42c6af4f5679
   repo: git@github.com:src-d/go-git
   vcs: git
   subpackages:
@@ -79,6 +77,7 @@ imports:
   - plumbing/cache
   - plumbing/filemode
   - plumbing/format/config
+  - plumbing/format/diff
   - plumbing/format/idxfile
   - plumbing/format/index
   - plumbing/format/objfile

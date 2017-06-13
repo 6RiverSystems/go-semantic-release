@@ -12,6 +12,7 @@ import (
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
 	fs billy.Filesystem
+	dir *dotgit.DotGit
 
 	ObjectStorage
 	ReferenceStorage
@@ -31,6 +32,7 @@ func NewStorage(fs billy.Filesystem) (*Storage, error) {
 
 	return &Storage{
 		fs: fs,
+		dir: dir,
 
 		ObjectStorage:    o,
 		ReferenceStorage: ReferenceStorage{dir: dir},
@@ -44,4 +46,8 @@ func NewStorage(fs billy.Filesystem) (*Storage, error) {
 // Filesystem returns the underlying filesystem
 func (s *Storage) Filesystem() billy.Filesystem {
 	return s.fs
+}
+
+func (s *Storage) Init() error {
+	return s.dir.Initialize()
 }

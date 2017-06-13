@@ -44,6 +44,10 @@ type Repository struct {
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrRepositoryAlreadyExists is returned
 func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
+	if err := initStorer(s); err != nil {
+		return nil, err
+	}
+
 	r := newRepository(s, worktree)
 	_, err := r.Reference(plumbing.HEAD, false)
 	switch err {
@@ -65,6 +69,15 @@ func Init(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 	}
 
 	return r, setWorktreeAndStoragePaths(r, worktree)
+}
+
+func initStorer(s storer.Storer) error {
+	i, ok := s.(storer.Initializer)
+	if !ok {
+		return nil
+	}
+
+	return i.Init()
 }
 
 func setWorktreeAndStoragePaths(r *Repository, worktree billy.Filesystem) error {
@@ -198,6 +211,14 @@ func PlainInit(path string, isBare bool) (*Repository, error) {
 func PlainOpen(path string) (*Repository, error) {
 	dot, wt, err := dotGitToFilesystems(path)
 	if err != nil {
+		return nil, err
+	}
+
+	if _, err := dot.Stat(""); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrRepositoryNotExists
+		}
+
 		return nil, err
 	}
 

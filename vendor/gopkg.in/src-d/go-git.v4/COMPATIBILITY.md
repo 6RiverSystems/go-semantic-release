@@ -16,8 +16,8 @@ is supported by go-git.
 | status                                | ✔ |
 | commit                                | ✔ |
 | reset                                 | ✔ |
-| rm                                    | ✖ |
-| mv                                    | ✖ |
+| rm                                    | ✔ |
+| mv                                    | ✔ |
 | **branching and merging** |
 | branch                                | ✔ |
 | checkout                              | ✔ | Basic usages of checkout are supported. |
@@ -39,7 +39,7 @@ is supported by go-git.
 | **patching** |
 | apply                                 | ✖ |
 | cherry-pick                           | ✖ |
-| diff                                  | ✖ |
+| diff                                  | ✔ | Patch object with UnifiedDiff output representation |
 | rebase                                | ✖ |
 | revert                                | ✖ |
 | **debugging** |
