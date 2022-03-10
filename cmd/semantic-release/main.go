@@ -161,11 +161,9 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		// If branch is master -> no pre-latestRelease version
 		case "master":
 			prerelease = ""
-			break
 		// If branch is develop -> beta latestRelease
 		case "develop":
 			prerelease = "beta"
-			break
 		default:
 			branchPath := strings.Split(curCommitInfo.Branch, "/")
 			prerelease = branchPath[len(branchPath)-1]

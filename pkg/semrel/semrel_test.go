@@ -22,7 +22,7 @@ func TestCalculateChange(t *testing.T) {
 	if change.Major || change.Minor || change.Patch {
 		t.Fail()
 	}
-	newVersion := GetNewVersion(&config.Config{}, commits, &Release{SHA: "b", Version: "1.0.0"})
+	newVersion := GetNewVersion(&config.Config{}, commits, &Release{SHA: "b", Version: "1.0.0"}, "")
 	if newVersion != "2.0.0" {
 		t.Fail()
 	}
