@@ -1,6 +1,8 @@
 package semrel
 
 import (
+	"log"
+	"os"
 	"sort"
 	"strings"
 
@@ -22,6 +24,8 @@ func (r releases) Swap(i, j int) {
 }
 
 func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, error) {
+
+	logger := log.New(os.Stderr, "[wtf mate]: ", 0)
 	if len(r) == 0 {
 		return &Release{SHA: "", Version: "0.0.0"}, nil
 	}
@@ -30,9 +34,12 @@ func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, 
 
 	var lastRelease *Release
 	for _, r := range r {
+		logger.Println("Checking version: ", r.Version)
 		if semver.MustParse(r.Version).Prerelease() == "" {
 			lastRelease = r
-			break
+			if prerelease == "" {
+				break
+			}
 		}
 
 		prereleaseParts := strings.Split(semver.MustParse(r.Version).Prerelease(), ".")

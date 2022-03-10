@@ -264,7 +264,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 	commits := commitAnalyzer.Analyze(rawCommits)
 
 	logger.Println("calculating new version...")
-	newVer := semrel.GetNewVersion(conf, commits, release)
+	newVer := semrel.GetNewVersion(conf, commits, release, prerelease)
 	if newVer == "" {
 		herr := hooksExecutor.NoRelease(&hooks.NoReleaseConfig{
 			Reason:  hooks.NoReleaseReason_NO_CHANGE,
