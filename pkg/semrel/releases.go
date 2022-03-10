@@ -47,7 +47,7 @@ func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, 
 		if prereleaseParts[0] == prerelease {
 			// If it is a beta release and the last production release is newer
 			// just stop here and go with the last production release version.
-			if prerelease == "beta" && lastRelease != nil && semver.MustParse(r.Version).LessThan(semver.MustParse(lastRelease.Version)) {
+			if lastRelease != nil && semver.MustParse(r.Version).LessThan(semver.MustParse(lastRelease.Version)) {
 				break
 			}
 

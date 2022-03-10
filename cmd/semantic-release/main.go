@@ -162,11 +162,15 @@ func cliHandler(cmd *cobra.Command, args []string) {
 	logger.Println("found current branch: " + currentBranch)
 
 	curCommitInfo, err := GetCurCommitInfo()
+	if err == git.ErrRepositoryNotExists {
+		logger.Println(`Repository (.git directory) does not exist in local directory. Be sure to
+run go-semantic-release in a git repository`)
+	}
 	exitIfError(err)
 	logger.Println("found current branch: " + curCommitInfo.Branch)
 
 	prerelease := ""
-	if conf.Flow && conf.MaintainedVersion == "" {
+	if conf.Flow && conf.MaintainedVersion == "" && currentBranch != defaultBranch {
 		switch curCommitInfo.Branch {
 		// If branch is master -> no pre-latestRelease version
 		case "master":

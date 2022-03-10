@@ -2,8 +2,6 @@ package semrel
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"strconv"
 	"strings"
 
@@ -26,15 +24,11 @@ func calculateChange(commits []*Commit, latestRelease *Release) *Change {
 
 func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVersions bool, forceBumpPatchVersion bool, prerelease string) string {
 
-	logger := log.New(os.Stderr, "[wtf mate]: ", 0)
 	version := semver.MustParse(rawVersion)
 	change := &Change{
 		Major: rawChange.Major,
 		Minor: rawChange.Minor,
 		Patch: rawChange.Patch,
-	}
-	if !allowInitialDevelopmentVersions && version.Major() == 0 {
-		change.Major = true
 	}
 
 	if allowInitialDevelopmentVersions && version.Major() == 0 && version.Minor() == 0 {
@@ -51,14 +45,9 @@ func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVe
 	preRelVer := strings.Split(preRel, ".")
 	preRelLabel := preRelVer[0]
 
-	logger.Println("OKAY")
-	logger.Println("wtf " + prerelease + " " + preRelLabel)
 	var newVersion semver.Version
 
-	logger.Println("OKAY")
 	if preRelLabel == "" {
-
-		logger.Println("IN IF")
 		switch {
 		case change.Major:
 			newVersion = version.IncMajor()
@@ -68,12 +57,9 @@ func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVe
 			newVersion = version.IncPatch()
 		}
 	} else {
-		logger.Println("IN ELSE")
 		newVersion = *version
 	}
 
-	logger.Println("HERE")
-	logger.Println("prerelease: " + prerelease + " vs " + preRelVer[0])
 	if prerelease != "" && preRelVer[0] != prerelease {
 		preRel = prerelease + ".1"
 	} else {
@@ -89,7 +75,6 @@ func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVe
 	}
 	newVersion, _ = version.SetPrerelease(preRel)
 
-	logger.Println("RETURNING")
 	return newVersion.String()
 }
 
