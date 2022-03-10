@@ -10,6 +10,7 @@ import (
 
 // Config is a complete set of app configuration
 type Config struct {
+	DefaultBranch                         string
 	Token                                 string
 	ProviderPlugin                        string
 	ProviderOpts                          map[string]string
@@ -102,6 +103,8 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		mustGetStringArray(cmd, "hooks-opt"))
 
 	conf := &Config{
+		DefaultBranch: viper.GetString("default_branch"),
+
 		Token:                                 mustGetString(cmd, "token"),
 		ProviderPlugin:                        viper.GetString("plugins.provider.name"),
 		ProviderOpts:                          provOpts,
@@ -159,6 +162,7 @@ func defaultProvider() string {
 }
 
 func SetFlags(cmd *cobra.Command) {
+	cmd.Flags().String("default_branch", os.Getenv("GIT_DEFAULT_BRANCH"), "override the branch to consider the default for creating non-pre-release tags")
 	cmd.Flags().StringP("token", "t", "", "provider token")
 	cmd.Flags().String("provider", defaultProvider(), "provider plugin name")
 	cmd.Flags().StringArray("provider-opt", []string{}, "options that are passed to the provider plugin")

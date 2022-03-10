@@ -145,6 +145,16 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		logger.Println("repo is private")
 	}
 
+	defaultBranch := ""
+
+	if conf.DefaultBranch != "" {
+		logger.Println("using overridden default branch:", conf.DefaultBranch, "instead of detected:", repoInfo.DefaultBranch)
+		defaultBranch = conf.DefaultBranch
+	} else {
+		defaultBranch = repoInfo.DefaultBranch
+		logger.Println("found default branch: " + defaultBranch)
+	}
+
 	currentBranch := ci.GetCurrentBranch()
 	if currentBranch == "" {
 		exitIfError(fmt.Errorf("current branch not found"))
@@ -175,13 +185,13 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		logger.Println("Determined prerelease version: " + prerelease)
 	}
 
-	if !conf.AllowMaintainedVersionOnDefaultBranch && conf.MaintainedVersion != "" && currentBranch == repoInfo.DefaultBranch {
+	if !conf.AllowMaintainedVersionOnDefaultBranch && conf.MaintainedVersion != "" && currentBranch == defaultBranch {
 		exitIfError(fmt.Errorf("maintained version not allowed on default branch"))
 	}
 
 	if conf.MaintainedVersion != "" {
 		logger.Println("found maintained version: " + conf.MaintainedVersion)
-		repoInfo.DefaultBranch = "*"
+		defaultBranch = "*"
 	}
 
 	currentSha := ci.GetCurrentSHA()
@@ -200,7 +210,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		"ci":            ciName,
 		"currentBranch": currentBranch,
 		"currentSha":    currentSha,
-		"defaultBranch": repoInfo.DefaultBranch,
+		"defaultBranch": defaultBranch,
 		"prerelease":    fmt.Sprintf("%t", conf.Prerelease),
 	}
 	for k, v := range conf.HooksOpts {
@@ -212,7 +222,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		logger.Println("running CI condition...")
 		conditionConfig := map[string]string{
 			"token":         conf.Token,
-			"defaultBranch": repoInfo.DefaultBranch,
+			"defaultBranch": defaultBranch,
 			"private":       fmt.Sprintf("%t", repoInfo.Private),
 		}
 		for k, v := range conf.CIConditionOpts {
