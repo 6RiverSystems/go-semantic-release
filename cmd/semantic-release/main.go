@@ -9,14 +9,16 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"github.com/jbcpollak/strcase"
+
 	"github.com/Masterminds/semver/v3"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/config"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/generator"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/hooks"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/plugin/manager"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/provider"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/semrel"
+	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +41,30 @@ func errorHandler(logger *log.Logger) func(error, ...int) {
 			os.Exit(1)
 		}
 	}
+}
+
+type CommitInfo struct {
+	Branch string
+	SHA    string
+}
+
+func GetCurCommitInfo() (*CommitInfo, error) {
+
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		return nil, err
+	}
+
+	headRef, err := repo.Head()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &CommitInfo{
+		Branch: headRef.Name().Short(),
+		SHA:    headRef.Hash().String(),
+	}, nil
 }
 
 func main() {
@@ -65,31 +91,8 @@ func main() {
 	}
 }
 
-func main() {
-	token := flag.String("token", os.Getenv("GITHUB_TOKEN"), "github token")
-	slug := flag.String("slug", os.Getenv("TRAVIS_REPO_SLUG"), "slug of the repository")
-	ghr := flag.Bool("ghr", false, "create a .ghr file with the parameters for ghr")
-	noci := flag.Bool("noci", false, "run semantic-release locally")
-	nochange := flag.Bool("nochange", false, "don't return an error code when the calculated version has already been tagged")
-	dry := flag.Bool("dry", false, "do not create release")
-	flow := flag.Bool("flow", false, "follow branch naming conventions")
-	vFile := flag.Bool("vf", false, "create a .version file")
-	showVersion := flag.Bool("version", false, "outputs the semantic-release version")
-	updateFile := flag.String("update", "", "updates the version of a certain file")
-	branchEnv := flag.Bool("branch_env", false, "use GIT_BRANCH environment variable with branch information")
-	defaultBranchFlag := flag.String(
-		"default_branch",
-		os.Getenv("GIT_DEFAULT_BRANCH"),
-		"override the branch to consider the default for creating non-pre-release tags",
-	)
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Printf("semantic-release v%s", SRVERSION)
-		return
-	}
-
-	logger := log.New(os.Stderr, "[semantic-release]: ", 0)
+func cliHandler(cmd *cobra.Command, args []string) {
+	logger := log.New(os.Stderr, "[go-semantic-release]: ", 0)
 	exitIfError := errorHandler(logger)
 
 	logger.Printf("version: %s\n", SRVERSION)
@@ -142,24 +145,37 @@ func main() {
 		logger.Println("repo is private")
 	}
 
-	currentBranch := ""
-	if *branchEnv {
-		envBranch, present := os.LookupEnv("GIT_BRANCH")
-		currentBranch = envBranch
-		if !present {
-			exitIfError(errors.New("branch not present in env var: GIT_BRANCH"))
+	currentBranch := ci.GetCurrentBranch()
+	if currentBranch == "" {
+		exitIfError(fmt.Errorf("current branch not found"))
+	}
+	logger.Println("found current branch: " + currentBranch)
+
+	curCommitInfo, err := GetCurCommitInfo()
+	exitIfError(err)
+	logger.Println("found current branch: " + curCommitInfo.Branch)
+
+	prerelease := ""
+	if conf.Flow && conf.MaintainedVersion == "" {
+		switch curCommitInfo.Branch {
+		// If branch is master -> no pre-latestRelease version
+		case "master":
+			prerelease = ""
+			break
+		// If branch is develop -> beta latestRelease
+		case "develop":
+			prerelease = "beta"
+			break
+		default:
+			branchPath := strings.Split(curCommitInfo.Branch, "/")
+			prerelease = branchPath[len(branchPath)-1]
+			prerelease = strcase.ToLowerCamel(prerelease)
 		}
-	} else {
-		curCommitInfo, err := condition.GetCurCommitInfo()
-		if err == git.ErrRepositoryNotExists {
-			logger.Println(`Repository (.git directory) does not exist in local directory. Be sure to
-run go-semantic-release in a git repository`)
-		}
-		exitIfError(err)
-		currentBranch = curCommitInfo.Branch
 	}
 
-	logger.Println("found current branch: " + currentBranch)
+	if prerelease != "" {
+		logger.Println("Determined prerelease version: " + prerelease)
+	}
 
 	if !conf.AllowMaintainedVersionOnDefaultBranch && conf.MaintainedVersion != "" && currentBranch == repoInfo.DefaultBranch {
 		exitIfError(fmt.Errorf("maintained version not allowed on default branch"))
@@ -170,27 +186,31 @@ run go-semantic-release in a git repository`)
 		repoInfo.DefaultBranch = "*"
 	}
 
-	prerelease := ""
-	if *flow && config.MaintainedVersion == "" {
-		switch currentBranch {
-		// If branch is defaultBranch -> no pre-latestRelease version
-		case defaultBranch:
-			prerelease = ""
-		// If branch is develop -> beta latestRelease
-		case "develop":
-			prerelease = "beta"
-		default:
-			branchPath := strings.Split(currentBranch, "/")
-			prerelease = branchPath[len(branchPath)-1]
-			prerelease = strcase.ToLowerCamel(prerelease)
-		}
+	currentSha := ci.GetCurrentSHA()
+	logger.Println("found current sha: " + currentSha)
+
+	hooksExecutor, err := pluginManager.GetChainedHooksExecutor()
+	exitIfError(err)
+
+	hooksNames := hooksExecutor.GetNameVersionPairs()
+	if len(hooksNames) > 0 {
+		logger.Printf("hooks plugins: %s\n", strings.Join(hooksNames, ", "))
 	}
 
-	if prerelease != "" {
-		logger.Println("Determined prerelease version: " + prerelease)
+	hooksConfig := map[string]string{
+		"provider":      provName,
+		"ci":            ciName,
+		"currentBranch": currentBranch,
+		"currentSha":    currentSha,
+		"defaultBranch": repoInfo.DefaultBranch,
+		"prerelease":    fmt.Sprintf("%t", conf.Prerelease),
 	}
+	for k, v := range conf.HooksOpts {
+		hooksConfig[k] = v
+	}
+	exitIfError(hooksExecutor.Init(hooksConfig))
 
-	if !*noci {
+	if !conf.NoCI {
 		logger.Println("running CI condition...")
 		conditionConfig := map[string]string{
 			"token":         conf.Token,
@@ -215,11 +235,19 @@ run go-semantic-release in a git repository`)
 	}
 
 	logger.Println("getting latest release...")
-	latestRelease, err := repo.GetLatestRelease(config.MaintainedVersion, prerelease)
+	matchRegex := ""
+	match := strings.TrimSpace(conf.Match)
+	if match != "" {
+		logger.Printf("getting latest release matching %s...", match)
+		matchRegex = "^" + match
+	}
+	releases, err := prov.GetReleases(matchRegex)
 	exitIfError(err)
-	logger.Println("found version: " + latestRelease.Version.String())
+	release, err := semrel.GetLatestReleaseFromReleases(releases, conf.MaintainedVersion)
+	exitIfError(err)
+	logger.Println("found version: " + release.Version)
 
-	if strings.Contains(config.MaintainedVersion, "-") && latestRelease.Version.Prerelease() == "" {
+	if strings.Contains(conf.MaintainedVersion, "-") && semver.MustParse(release.Version).Prerelease() == "" {
 		exitIfError(fmt.Errorf("no pre-release for this version possible"))
 	}
 
@@ -236,16 +264,23 @@ run go-semantic-release in a git repository`)
 	commits := commitAnalyzer.Analyze(rawCommits)
 
 	logger.Println("calculating new version...")
-	newVer := semrel.GetNewVersion(commits, latestRelease, prerelease)
-
-	if *nochange && newVer == latestRelease.Version {
-		logger.Println("Latest version tag is equal to current commit using version: " + newVer.String())
-	} else {
-		if newVer == nil {
-			exitIfError(errors.New("no change"))
+	newVer := semrel.GetNewVersion(conf, commits, release)
+	if newVer == "" {
+		herr := hooksExecutor.NoRelease(&hooks.NoReleaseConfig{
+			Reason:  hooks.NoReleaseReason_NO_CHANGE,
+			Message: "",
+		})
+		if herr != nil {
+			logger.Printf("there was an error executing the hooks plugins: %s", herr.Error())
 		}
-		logger.Println("new version: " + newVer.String())
+		errNoChange := errors.New("no change")
+		if conf.AllowNoChanges {
+			exitIfError(errNoChange, 0)
+		} else {
+			exitIfError(errNoChange, 65)
+		}
 	}
+	logger.Println("new version: " + newVer)
 
 	logger.Println("generating changelog...")
 	changelogGenerator, err := pluginManager.GetChangelogGenerator()
@@ -270,10 +305,22 @@ run go-semantic-release in a git repository`)
 		exitIfError(ioutil.WriteFile(conf.Changelog, changelogData, 0644))
 	}
 
-	if newVer != latestRelease.Version {
-		logger.Println("creating release...")
-		exitIfError(repo.CreateRelease(commits, latestRelease, newVer, currentBranch))
+	if conf.Dry {
+		if conf.VersionFile {
+			exitIfError(ioutil.WriteFile(".version-unreleased", []byte(newVer), 0644))
+		}
+		exitIfError(errors.New("DRY RUN: no release was created"), 0)
 	}
+
+	logger.Println("creating release...")
+	newRelease := &provider.CreateReleaseConfig{
+		Changelog:  changelogRes,
+		NewVersion: newVer,
+		Prerelease: conf.Prerelease,
+		Branch:     currentBranch,
+		SHA:        currentSha,
+	}
+	exitIfError(prov.CreateRelease(newRelease))
 
 	if conf.Ghr {
 		exitIfError(ioutil.WriteFile(".ghr", []byte(fmt.Sprintf("-u %s -r %s v%s", repoInfo.Owner, repoInfo.Repo, newVer)), 0644))

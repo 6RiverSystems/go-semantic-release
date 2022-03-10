@@ -30,6 +30,7 @@ type Config struct {
 	Prerelease                            bool
 	Ghr                                   bool
 	NoCI                                  bool
+	Flow                                  bool
 	Dry                                   bool
 	AllowInitialDevelopmentVersions       bool
 	AllowNoChanges                        bool
@@ -121,6 +122,7 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		Prerelease:                            mustGetBool(cmd, "prerelease"),
 		Ghr:                                   mustGetBool(cmd, "ghr"),
 		NoCI:                                  mustGetBool(cmd, "no-ci"),
+		Flow:                                  mustGetBool(cmd, "flow"),
 		Dry:                                   mustGetBool(cmd, "dry"),
 		AllowInitialDevelopmentVersions:       mustGetBool(cmd, "allow-initial-development-versions"),
 		AllowNoChanges:                        mustGetBool(cmd, "allow-no-changes"),
@@ -179,6 +181,7 @@ func SetFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("ghr", false, "create a .ghr file with the parameters for ghr")
 	cmd.Flags().Bool("no-ci", false, "run semantic-release locally")
 	cmd.Flags().Bool("dry", false, "do not create release")
+	cmd.Flags().Bool("flow", false, "follow branch naming conventions")
 	cmd.Flags().Bool("allow-initial-development-versions", false, "semantic-release will start your initial development release at 0.1.0")
 	cmd.Flags().Bool("allow-no-changes", false, "exit with code 0 if no changes are found, useful if semantic-release is automatically run")
 	cmd.Flags().Bool("force-bump-patch-version", false, "increments the patch version if no changes are found")

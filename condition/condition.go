@@ -4,7 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-	"gopkg.in/src-d/go-git.v4"
+
+	"github.com/go-git/go-git/v5"
 )
 
 func readGitHead() string {
@@ -28,7 +29,6 @@ type CommitInfo struct {
 }
 
 func GetCurCommitInfo() (*CommitInfo, error) {
-
 
 	repo, err := git.PlainOpen(".")
 	if err != nil {
