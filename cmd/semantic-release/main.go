@@ -243,7 +243,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 	}
 	releases, err := prov.GetReleases(matchRegex)
 	exitIfError(err)
-	release, err := semrel.GetLatestReleaseFromReleases(releases, conf.MaintainedVersion)
+	release, err := semrel.GetLatestReleaseFromReleases(releases, conf.MaintainedVersion, prerelease)
 	exitIfError(err)
 	logger.Println("found version: " + release.Version)
 

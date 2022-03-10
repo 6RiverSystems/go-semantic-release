@@ -21,7 +21,7 @@ func (r releases) Swap(i, j int) {
 	r[i], r[j] = r[j], r[i]
 }
 
-func (r releases) GetLatestRelease(vrange string) (*Release, error) {
+func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, error) {
 	if len(r) == 0 {
 		return &Release{SHA: "", Version: "0.0.0"}, nil
 	}
@@ -33,6 +33,21 @@ func (r releases) GetLatestRelease(vrange string) (*Release, error) {
 		if semver.MustParse(r.Version).Prerelease() == "" {
 			lastRelease = r
 			break
+		}
+
+		prereleaseParts := strings.Split(semver.MustParse(r.Version).Prerelease(), ".")
+
+		if prereleaseParts[0] == prerelease {
+			// If it is a beta release and the last production release is newer
+			// just stop here and go with the last production release version.
+			if prerelease == "beta" && lastRelease != nil && semver.MustParse(r.Version).LessThan(semver.MustParse(lastRelease.Version)) {
+				break
+			}
+
+			if prerelease != "" {
+				lastRelease = r
+				break
+			}
 		}
 	}
 
@@ -70,6 +85,6 @@ func (r releases) GetLatestRelease(vrange string) (*Release, error) {
 	return &Release{SHA: lastRelease.SHA, Version: npver.String()}, nil
 }
 
-func GetLatestReleaseFromReleases(rawReleases []*Release, vrange string) (*Release, error) {
-	return releases(rawReleases).GetLatestRelease(vrange)
+func GetLatestReleaseFromReleases(rawReleases []*Release, vrange string, prerelease string) (*Release, error) {
+	return releases(rawReleases).GetLatestRelease(vrange, prerelease)
 }
