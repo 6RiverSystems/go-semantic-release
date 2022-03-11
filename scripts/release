@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-./semantic-release --ghr --version-file --prerelease
+./semantic-release --ghr --flow --version-file --slug 6RiverSystems/go-semantic-release
 export VERSION=$(cat .version)
 
 export CGO_ENABLED=0
