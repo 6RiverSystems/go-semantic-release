@@ -2,8 +2,10 @@
 
 set -euo pipefail
 
-./semantic-release --ghr --flow --version-file --slug 6RiverSystems/go-semantic-release
+GITHUB_REPOSITORY='6RiverSystems/go-semantic-release'
+./semantic-release --ghr --flow --version-file
 export VERSION=$(cat .version)
+
 
 export CGO_ENABLED=0
 gox -parallel 4 -osarch="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 linux/arm windows/amd64" -ldflags="-extldflags '-static' -s -w -X main.SRVERSION=$VERSION" -output="bin/{{.Dir}}_v"$VERSION"_{{.OS}}_{{.Arch}}" ./cmd/semantic-release/
