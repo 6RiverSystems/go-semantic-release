@@ -186,7 +186,7 @@ func SetFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-ci", false, "run semantic-release locally")
 	cmd.Flags().Bool("dry", false, "do not create release")
 	cmd.Flags().Bool("flow", false, "follow branch naming conventions")
-	cmd.Flags().Bool("allow-initial-development-versions", false, "semantic-release will start your initial development release at 0.1.0")
+	cmd.Flags().Bool("allow-initial-development-versions", true, "semantic-release will start your initial development release at 0.1.0")
 	cmd.Flags().Bool("allow-no-changes", false, "exit with code 0 if no changes are found, useful if semantic-release is automatically run")
 	cmd.Flags().Bool("force-bump-patch-version", false, "increments the patch version if no changes are found")
 	cmd.Flags().Bool("prepend-changelog", false, "if the changelog file already exist the new changelog is prepended")

@@ -2,6 +2,8 @@ package semrel
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"strconv"
 	"strings"
 
@@ -24,11 +26,16 @@ func calculateChange(commits []*Commit, latestRelease *Release) *Change {
 
 func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVersions bool, forceBumpPatchVersion bool, prerelease string) string {
 
+	logger := log.New(os.Stderr, "[omg mate]: ", 0)
 	version := semver.MustParse(rawVersion)
 	change := &Change{
 		Major: rawChange.Major,
 		Minor: rawChange.Minor,
 		Patch: rawChange.Patch,
+	}
+
+	if !allowInitialDevelopmentVersions && version.Major() == 0 {
+		change.Major = true
 	}
 
 	if allowInitialDevelopmentVersions && version.Major() == 0 && version.Minor() == 0 {
@@ -47,7 +54,9 @@ func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVe
 
 	var newVersion semver.Version
 
-	if preRelLabel == "" {
+	logger.Println("preRelLabel: " + preRelLabel + " prerelease: " + prerelease)
+
+	if prerelease == "" && preRelLabel == "" {
 		switch {
 		case change.Major:
 			newVersion = version.IncMajor()
@@ -56,8 +65,7 @@ func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVe
 		case change.Patch:
 			newVersion = version.IncPatch()
 		}
-	} else {
-		newVersion = *version
+		return newVersion.String()
 	}
 
 	if prerelease != "" && preRelVer[0] != prerelease {
