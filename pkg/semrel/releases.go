@@ -25,7 +25,7 @@ func (r releases) Swap(i, j int) {
 
 func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, error) {
 
-	logger := log.New(os.Stderr, "[wtf mate]: ", 0)
+	logger := log.New(os.Stderr, "[releases]: ", 0)
 	if len(r) == 0 {
 		return &Release{SHA: "", Version: "0.0.0"}, nil
 	}
@@ -37,10 +37,10 @@ func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, 
 	var lastRelease *Release
 	for _, r := range r {
 		logger.Println("Checking version: ", r.Version)
-		if semver.MustParse(r.Version).Prerelease() == "" {
+		if semver.MustParse(r.Version).Prerelease() == "" && lastRelease == nil {
+			logger.Println("Setting last release: " + r.Version)
 			lastRelease = r
 			if prerelease == "" {
-				logger.Println("breaking!")
 				break
 			}
 		}
@@ -52,16 +52,15 @@ func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, 
 		if prereleaseParts[0] == prerelease {
 
 			logger.Println("prereleaseParts[0]: " + prereleaseParts[0] + " : " + prereleaseParts[1] + " : " + r.Version)
+
+			logger.Println("mainReleaseParts[0]: " + mainVersionParts[0] + " : " + r.Version)
 			// If it is a beta release and the last production release is newer
 			// just stop here and go with the last production release version.
 			if lastRelease != nil && semver.MustParse(mainVersionParts[0]).LessThan(semver.MustParse(lastRelease.Version)) {
-				logger.Println("first if!")
 				break
 			}
 
 			if prerelease != "" {
-
-				logger.Println("last if")
 				lastRelease = r
 				break
 			}

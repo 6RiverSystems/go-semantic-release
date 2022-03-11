@@ -26,7 +26,7 @@ func calculateChange(commits []*Commit, latestRelease *Release) *Change {
 
 func applyChange(rawVersion string, rawChange *Change, allowInitialDevelopmentVersions bool, forceBumpPatchVersion bool, prerelease string) string {
 
-	logger := log.New(os.Stderr, "[omg mate]: ", 0)
+	logger := log.New(os.Stderr, "[semrel]: ", 0)
 	version := semver.MustParse(rawVersion)
 	change := &Change{
 		Major: rawChange.Major,
