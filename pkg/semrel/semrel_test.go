@@ -73,7 +73,7 @@ func TestApplyChange(t *testing.T) {
 				t.Errorf("failed to create version: %v", err)
 			}
 
-			actual := applyChange(current.String(), tc.change, tc.allowInitialDevelopmentVersions, tc.forceBumpPatchVersion)
+			actual := applyChange(current.String(), tc.change, tc.allowInitialDevelopmentVersions, tc.forceBumpPatchVersion, "")
 
 			// Handle no new version case
 			if actual != "" && tc.expectedVersion != "" {
