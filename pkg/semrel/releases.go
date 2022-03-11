@@ -32,26 +32,36 @@ func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, 
 
 	sort.Sort(r)
 
+	logger.Println("prerelease: " + prerelease)
+
 	var lastRelease *Release
 	for _, r := range r {
 		logger.Println("Checking version: ", r.Version)
 		if semver.MustParse(r.Version).Prerelease() == "" {
 			lastRelease = r
 			if prerelease == "" {
+				logger.Println("breaking!")
 				break
 			}
 		}
 
 		prereleaseParts := strings.Split(semver.MustParse(r.Version).Prerelease(), ".")
 
+		mainVersionParts := strings.Split(r.Version, "-")
+
 		if prereleaseParts[0] == prerelease {
+
+			logger.Println("prereleaseParts[0]: " + prereleaseParts[0] + " : " + prereleaseParts[1] + " : " + r.Version)
 			// If it is a beta release and the last production release is newer
 			// just stop here and go with the last production release version.
-			if lastRelease != nil && semver.MustParse(r.Version).LessThan(semver.MustParse(lastRelease.Version)) {
+			if lastRelease != nil && semver.MustParse(mainVersionParts[0]).LessThan(semver.MustParse(lastRelease.Version)) {
+				logger.Println("first if!")
 				break
 			}
 
 			if prerelease != "" {
+
+				logger.Println("last if")
 				lastRelease = r
 				break
 			}
