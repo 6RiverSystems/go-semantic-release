@@ -71,7 +71,7 @@ func TestReleases(t *testing.T) {
 	}
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("TestReleases: %d, LV: %s", i, tc.LatestVersion), func(t *testing.T) {
-			lr, err := tc.Releases.GetLatestRelease(tc.VRange)
+			lr, err := tc.Releases.GetLatestRelease(tc.VRange, "")
 			require.NoError(t, err)
 			require.Equal(t, tc.LatestVersion, lr.Version)
 		})

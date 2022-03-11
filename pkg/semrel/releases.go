@@ -1,6 +1,8 @@
 package semrel
 
 import (
+	"log"
+	"os"
 	"sort"
 	"strings"
 
@@ -21,18 +23,47 @@ func (r releases) Swap(i, j int) {
 	r[i], r[j] = r[j], r[i]
 }
 
-func (r releases) GetLatestRelease(vrange string) (*Release, error) {
+func (r releases) GetLatestRelease(vrange string, prerelease string) (*Release, error) {
+
+	logger := log.New(os.Stderr, "[releases]: ", 0)
 	if len(r) == 0 {
 		return &Release{SHA: "", Version: "0.0.0"}, nil
 	}
 
 	sort.Sort(r)
 
+	logger.Println("prerelease: " + prerelease)
+
 	var lastRelease *Release
 	for _, r := range r {
-		if semver.MustParse(r.Version).Prerelease() == "" {
+		logger.Println("Checking version: ", r.Version)
+		if semver.MustParse(r.Version).Prerelease() == "" && lastRelease == nil {
+			logger.Println("Setting last release: " + r.Version)
 			lastRelease = r
-			break
+			if prerelease == "" {
+				break
+			}
+		}
+
+		prereleaseParts := strings.Split(semver.MustParse(r.Version).Prerelease(), ".")
+
+		mainVersionParts := strings.Split(r.Version, "-")
+
+		if prereleaseParts[0] == prerelease {
+
+			logger.Println("prereleaseParts[0]: " + prereleaseParts[0] + " : " + prereleaseParts[1] + " : " + r.Version)
+
+			logger.Println("mainReleaseParts[0]: " + mainVersionParts[0] + " : " + r.Version)
+			// If it is a beta release and the last production release is newer
+			// just stop here and go with the last production release version.
+			if lastRelease != nil && semver.MustParse(mainVersionParts[0]).LessThan(semver.MustParse(lastRelease.Version)) {
+				break
+			}
+
+			if prerelease != "" {
+				lastRelease = r
+				break
+			}
 		}
 	}
 
@@ -70,6 +101,6 @@ func (r releases) GetLatestRelease(vrange string) (*Release, error) {
 	return &Release{SHA: lastRelease.SHA, Version: npver.String()}, nil
 }
 
-func GetLatestReleaseFromReleases(rawReleases []*Release, vrange string) (*Release, error) {
-	return releases(rawReleases).GetLatestRelease(vrange)
+func GetLatestReleaseFromReleases(rawReleases []*Release, vrange string, prerelease string) (*Release, error) {
+	return releases(rawReleases).GetLatestRelease(vrange, prerelease)
 }

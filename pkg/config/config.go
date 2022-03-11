@@ -10,6 +10,7 @@ import (
 
 // Config is a complete set of app configuration
 type Config struct {
+	DefaultBranch                         string
 	Token                                 string
 	ProviderPlugin                        string
 	ProviderOpts                          map[string]string
@@ -30,6 +31,7 @@ type Config struct {
 	Prerelease                            bool
 	Ghr                                   bool
 	NoCI                                  bool
+	Flow                                  bool
 	Dry                                   bool
 	AllowInitialDevelopmentVersions       bool
 	AllowNoChanges                        bool
@@ -101,6 +103,8 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		mustGetStringArray(cmd, "hooks-opt"))
 
 	conf := &Config{
+		DefaultBranch: viper.GetString("default_branch"),
+
 		Token:                                 mustGetString(cmd, "token"),
 		ProviderPlugin:                        viper.GetString("plugins.provider.name"),
 		ProviderOpts:                          provOpts,
@@ -121,6 +125,7 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		Prerelease:                            mustGetBool(cmd, "prerelease"),
 		Ghr:                                   mustGetBool(cmd, "ghr"),
 		NoCI:                                  mustGetBool(cmd, "no-ci"),
+		Flow:                                  mustGetBool(cmd, "flow"),
 		Dry:                                   mustGetBool(cmd, "dry"),
 		AllowInitialDevelopmentVersions:       mustGetBool(cmd, "allow-initial-development-versions"),
 		AllowNoChanges:                        mustGetBool(cmd, "allow-no-changes"),
@@ -157,6 +162,7 @@ func defaultProvider() string {
 }
 
 func SetFlags(cmd *cobra.Command) {
+	cmd.Flags().String("default_branch", os.Getenv("GIT_DEFAULT_BRANCH"), "override the branch to consider the default for creating non-pre-release tags")
 	cmd.Flags().StringP("token", "t", "", "provider token")
 	cmd.Flags().String("provider", defaultProvider(), "provider plugin name")
 	cmd.Flags().StringArray("provider-opt", []string{}, "options that are passed to the provider plugin")
@@ -179,9 +185,10 @@ func SetFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("ghr", false, "create a .ghr file with the parameters for ghr")
 	cmd.Flags().Bool("no-ci", false, "run semantic-release locally")
 	cmd.Flags().Bool("dry", false, "do not create release")
-	cmd.Flags().Bool("allow-initial-development-versions", false, "semantic-release will start your initial development release at 0.1.0")
+	cmd.Flags().Bool("flow", false, "follow branch naming conventions")
+	cmd.Flags().Bool("allow-initial-development-versions", true, "semantic-release will start your initial development release at 0.1.0")
 	cmd.Flags().Bool("allow-no-changes", false, "exit with code 0 if no changes are found, useful if semantic-release is automatically run")
-	cmd.Flags().Bool("force-bump-patch-version", false, "increments the patch version if no changes are found")
+	cmd.Flags().Bool("force-bump-patch-version", true, "increments the patch version if no changes are found")
 	cmd.Flags().Bool("prepend-changelog", false, "if the changelog file already exist the new changelog is prepended")
 	cmd.Flags().Bool("download-plugins", false, "downloads all required plugins if needed")
 	cmd.Flags().Bool("show-progress", false, "shows the plugin download progress")

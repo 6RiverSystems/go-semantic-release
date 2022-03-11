@@ -22,7 +22,7 @@ func TestCalculateChange(t *testing.T) {
 	if change.Major || change.Minor || change.Patch {
 		t.Fail()
 	}
-	newVersion := GetNewVersion(&config.Config{}, commits, &Release{SHA: "b", Version: "1.0.0"})
+	newVersion := GetNewVersion(&config.Config{}, commits, &Release{SHA: "b", Version: "1.0.0"}, "")
 	if newVersion != "2.0.0" {
 		t.Fail()
 	}
@@ -73,7 +73,7 @@ func TestApplyChange(t *testing.T) {
 				t.Errorf("failed to create version: %v", err)
 			}
 
-			actual := applyChange(current.String(), tc.change, tc.allowInitialDevelopmentVersions, tc.forceBumpPatchVersion)
+			actual := applyChange(current.String(), tc.change, tc.allowInitialDevelopmentVersions, tc.forceBumpPatchVersion, "")
 
 			// Handle no new version case
 			if actual != "" && tc.expectedVersion != "" {

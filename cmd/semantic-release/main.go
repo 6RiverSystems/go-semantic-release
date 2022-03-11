@@ -11,12 +11,14 @@ import (
 	"syscall"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/config"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/generator"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/hooks"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/plugin/manager"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/provider"
 	"github.com/go-semantic-release/semantic-release/v2/pkg/semrel"
+	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +41,30 @@ func errorHandler(logger *log.Logger) func(error, ...int) {
 			os.Exit(1)
 		}
 	}
+}
+
+type CommitInfo struct {
+	Branch string
+	SHA    string
+}
+
+func GetCurCommitInfo() (*CommitInfo, error) {
+
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		return nil, err
+	}
+
+	headRef, err := repo.Head()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &CommitInfo{
+		Branch: headRef.Name().Short(),
+		SHA:    headRef.Hash().String(),
+	}, nil
 }
 
 func main() {
@@ -119,19 +145,57 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		logger.Println("repo is private")
 	}
 
+	defaultBranch := ""
+
+	if conf.DefaultBranch != "" {
+		logger.Println("using overridden default branch:", conf.DefaultBranch, "instead of detected:", repoInfo.DefaultBranch)
+		defaultBranch = conf.DefaultBranch
+	} else {
+		defaultBranch = repoInfo.DefaultBranch
+		logger.Println("found default branch: " + defaultBranch)
+	}
+
 	currentBranch := ci.GetCurrentBranch()
 	if currentBranch == "" {
 		exitIfError(fmt.Errorf("current branch not found"))
 	}
 	logger.Println("found current branch: " + currentBranch)
 
-	if !conf.AllowMaintainedVersionOnDefaultBranch && conf.MaintainedVersion != "" && currentBranch == repoInfo.DefaultBranch {
+	curCommitInfo, err := GetCurCommitInfo()
+	if err == git.ErrRepositoryNotExists {
+		logger.Println(`Repository (.git directory) does not exist in local directory. Be sure to
+run go-semantic-release in a git repository`)
+	}
+	exitIfError(err)
+	logger.Println("found current branch: " + curCommitInfo.Branch)
+
+	prerelease := ""
+	if conf.Flow && conf.MaintainedVersion == "" && currentBranch != defaultBranch {
+		switch curCommitInfo.Branch {
+		// If branch is master -> no pre-latestRelease version
+		case "master":
+			prerelease = ""
+		// If branch is develop -> beta latestRelease
+		case "develop":
+			prerelease = "beta"
+		default:
+			branchPath := strings.Split(curCommitInfo.Branch, "/")
+			prerelease = branchPath[len(branchPath)-1]
+			prerelease = strcase.ToLowerCamel(prerelease)
+		}
+	}
+
+	if prerelease != "" {
+		logger.Println("Determined prerelease version: " + prerelease)
+	}
+
+	if !conf.AllowMaintainedVersionOnDefaultBranch && conf.MaintainedVersion != "" && currentBranch == defaultBranch {
 		exitIfError(fmt.Errorf("maintained version not allowed on default branch"))
 	}
 
 	if conf.MaintainedVersion != "" {
 		logger.Println("found maintained version: " + conf.MaintainedVersion)
-		repoInfo.DefaultBranch = "*"
+		defaultBranch = "*"
 	}
 
 	currentSha := ci.GetCurrentSHA()
@@ -150,7 +214,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		"ci":            ciName,
 		"currentBranch": currentBranch,
 		"currentSha":    currentSha,
-		"defaultBranch": repoInfo.DefaultBranch,
+		"defaultBranch": defaultBranch,
 		"prerelease":    fmt.Sprintf("%t", conf.Prerelease),
 	}
 	for k, v := range conf.HooksOpts {
@@ -162,7 +226,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 		logger.Println("running CI condition...")
 		conditionConfig := map[string]string{
 			"token":         conf.Token,
-			"defaultBranch": repoInfo.DefaultBranch,
+			"defaultBranch": defaultBranch,
 			"private":       fmt.Sprintf("%t", repoInfo.Private),
 		}
 		for k, v := range conf.CIConditionOpts {
@@ -191,7 +255,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 	}
 	releases, err := prov.GetReleases(matchRegex)
 	exitIfError(err)
-	release, err := semrel.GetLatestReleaseFromReleases(releases, conf.MaintainedVersion)
+	release, err := semrel.GetLatestReleaseFromReleases(releases, conf.MaintainedVersion, prerelease)
 	exitIfError(err)
 	logger.Println("found version: " + release.Version)
 
@@ -212,7 +276,7 @@ func cliHandler(cmd *cobra.Command, args []string) {
 	commits := commitAnalyzer.Analyze(rawCommits)
 
 	logger.Println("calculating new version...")
-	newVer := semrel.GetNewVersion(conf, commits, release)
+	newVer := semrel.GetNewVersion(conf, commits, release, prerelease)
 	if newVer == "" {
 		herr := hooksExecutor.NoRelease(&hooks.NoReleaseConfig{
 			Reason:  hooks.NoReleaseReason_NO_CHANGE,
