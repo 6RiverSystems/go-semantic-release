@@ -245,6 +245,10 @@ func CalculateChange(commits []*Commit, latestRelease *Release) Change {
 		change.Minor = change.Minor || commit.Change.Minor
 		change.Patch = change.Patch || commit.Change.Patch
 	}
+	// always apply at least a patch change if there was at least one new commit
+	if len(commits) > 0 && !change.NoChange {
+		change.Patch = true
+	}
 	return change
 }
 

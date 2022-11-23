@@ -226,8 +226,8 @@ func TestApplyChange(t *testing.T) {
 	}
 	version, _ = semver.NewVersion("0.1.0")
 	newVersion = ApplyChange(version, "", Change{})
-	if newVersion.String() != "1.0.0" {
-		t.Errorf("Expected newVersion to be 1.0.0 but was %s", newVersion.String())
+	if newVersion != nil {
+		t.Errorf("Expected newVersion to be nil but was %s", newVersion.String())
 	}
 	version, _ = semver.NewVersion("2.0.0-beta")
 	newVersion = ApplyChange(version, "", Change{true, true, true, false})
