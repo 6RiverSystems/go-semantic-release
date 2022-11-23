@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -xeuo pipefail
+
+rm -rvf ./bin
+
+pids=()
+for os in darwin linux ; do
+	for arch in arm64 amd64 ; do
+		CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -o bin/semantic-release_v${VERSION}_${os}_${arch} -ldflags="-s -w -X main.SRVERSION=$VERSION" ./cmd/semantic-release/ &
+		pids+=($!)
+	done
+done
+wait
+exit $?
