@@ -4,6 +4,11 @@ set -xeuo pipefail
 
 rm -rvf ./bin
 
+if [ ! -f .version ]; then
+	echo "Must have .version file for build" 1>&2
+	exit 1
+fi
+
 pids=()
 for os in darwin linux ; do
 	for arch in arm64 amd64 ; do

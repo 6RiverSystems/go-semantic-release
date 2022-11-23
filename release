@@ -2,12 +2,10 @@
 
 set -xeuo pipefail
 
-# use the app to release itself
-go run ./cmd/semantic-release/main.go -nochange -flow -noci -ghr -vf -update ./npm-package/package.json -slug 6RiverSystems/go-semantic-release
-export VERSION=$(cat .version)
+./prepare-release
 
 ./build-release
 
-ghr $(cat .ghr) ./bin/
+./github-release
 
 #cd ./npm-package && npm publish

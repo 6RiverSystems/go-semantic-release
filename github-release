@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -xeuo pipefail
+
+if [ ! -f .version ]; then
+	echo "Must have .version file for build" 1>&2
+	exit 1
+fi
+
+ghr -u 6RiverSystems -r go-semantic-release v$(cat .version) ./bin/
