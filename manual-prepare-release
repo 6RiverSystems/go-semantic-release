@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+read -p 'new version, no leading v> ' VERSION
+echo "$VERSION" >.version
+
+which sponge >/dev/null
+cat npm-package/package.json | jq --indent 2 --arg ver "$VERSION" '.version=$ver' | sponge npm-package/package.json
+
+git add npm-package/package.json
+git commit -a -t <(echo "prepare release v$VERSION")
+
+git tag "v$VERSION"

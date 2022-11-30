@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -xeuo pipefail
 
@@ -6,5 +6,16 @@ if [ ! -f .version ]; then
 	echo "Must have .version file for build" 1>&2
 	exit 1
 fi
+if [ ! -d bin ]; then
+	echo "Must build first" 1>&2
+	exit 1
+fi
+if [ -z "$GITHUB_TOKEN" ]; then
+	read -s -p 'GitHub Token (silent)> ' GITHUB_TOKEN
+	export GITHUB_TOKEN
+fi
+
+git push
+git push --tags
 
 ghr -u 6RiverSystems -r go-semantic-release v$(cat .version) ./bin/
