@@ -1,14 +1,14 @@
 package condition
 
 import (
-	"io/ioutil"
 	"os"
 	"strings"
+
 	"gopkg.in/src-d/go-git.v4"
 )
 
 func readGitHead() string {
-	data, err := ioutil.ReadFile(".git/HEAD")
+	data, err := os.ReadFile(".git/HEAD")
 	if err != nil {
 		return ""
 	}
@@ -28,7 +28,6 @@ type CommitInfo struct {
 }
 
 func GetCurCommitInfo() (*CommitInfo, error) {
-
 
 	repo, err := git.PlainOpen(".")
 	if err != nil {

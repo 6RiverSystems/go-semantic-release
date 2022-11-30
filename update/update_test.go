@@ -2,6 +2,7 @@ package update
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,8 +15,13 @@ func TestRegisterApply(t *testing.T) {
 		}
 		return nil
 	})
-	if err := Apply("../test-fixtures/package.json", nVer); err != nil {
-		t.Fatal(err)
+	td := t.TempDir()
+	tdf := filepath.Join(td, "package.json")
+	if err := os.WriteFile(tdf, []byte(testFixturePackageJson), 0o644); err != nil {
+		t.Fatalf("failed to write test fixture file: %v", err)
+	}
+	if err := Apply(tdf, nVer); err != nil {
+		t.Fatalf("failed to update package.json: %v", err)
 	}
 }
 

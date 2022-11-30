@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -39,8 +38,11 @@ func loadConfig() *SemRelConfig {
 		return &SemRelConfig{}
 	}
 	src := &SemRelConfig{}
-	json.NewDecoder(f).Decode(src)
-	f.Close()
+	if err := json.NewDecoder(f).Decode(src); err != nil {
+		// TODO: return an error instead
+		panic(err)
+	}
+	_ = f.Close()
 	return src
 }
 
@@ -184,11 +186,11 @@ run go-semantic-release in a git repository`)
 	}
 
 	if *ghr {
-		exitIfError(ioutil.WriteFile(".ghr", []byte(fmt.Sprintf("-u %s -r %s v%s", repo.Owner, repo.Repo, newVer.String())), 0644))
+		exitIfError(os.WriteFile(".ghr", []byte(fmt.Sprintf("-u %s -r %s v%s", repo.Owner, repo.Repo, newVer.String())), 0644))
 	}
 
 	if *vFile {
-		exitIfError(ioutil.WriteFile(".version", []byte(newVer.String()), 0644))
+		exitIfError(os.WriteFile(".version", []byte(newVer.String()), 0644))
 	}
 
 	if *updateFile != "" {
