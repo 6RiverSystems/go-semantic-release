@@ -234,19 +234,21 @@ func (repo *Repository) CreateRelease(commits []*Commit, latestRelease *Release,
 
 func CalculateChange(commits []*Commit, latestRelease *Release) Change {
 	var change Change
+	numChanges := 0
 	for _, commit := range commits {
-		log.Println("Examining commit", commit.SHA)
+		log.Printf("Examining commit %s: %#v\n", commit.SHA, commit.Change)
 
 		if latestRelease.SHA == commit.SHA {
 			change.NoChange = true
 			break
 		}
+		numChanges++
 		change.Major = change.Major || commit.Change.Major
 		change.Minor = change.Minor || commit.Change.Minor
 		change.Patch = change.Patch || commit.Change.Patch
 	}
 	// always apply at least a patch change if there was at least one new commit
-	if len(commits) > 0 && !change.NoChange {
+	if numChanges > 0 {
 		change.Patch = true
 	}
 	return change

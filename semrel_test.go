@@ -53,35 +53,48 @@ var (
 	}
 )
 
-func githubHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer token" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method == "GET" && r.URL.Path == "/repos/owner/test-repo" {
-		json.NewEncoder(w).Encode(GITHUB_REPO)
-		return
-	}
-	if r.Method == "GET" && r.URL.Path == "/repos/owner/test-repo/commits" {
-		json.NewEncoder(w).Encode(GITHUB_COMMITS)
-		return
-	}
-	if r.Method == "GET" && r.URL.Path == "/repos/owner/test-repo/git/refs/tags" {
-		json.NewEncoder(w).Encode(GITHUB_TAGS)
-		return
-	}
-	if r.Method == "POST" && r.URL.Path == "/repos/owner/test-repo/releases" {
-		var data map[string]string
-		json.NewDecoder(r.Body).Decode(&data)
-		r.Body.Close()
-		if data["tag_name"] != "v2.0.0" {
-			http.Error(w, "invalid tag name", http.StatusBadRequest)
+func githubHandler(t *testing.T) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		fmt.Fprint(w, "{}")
-		return
+		if r.Method == "GET" && r.URL.Path == "/repos/owner/test-repo" {
+			if err := json.NewEncoder(w).Encode(GITHUB_REPO); err != nil {
+				// should never happen
+				t.Fatalf("can't encode GITHUB_REPO: %v", err)
+			}
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == "/repos/owner/test-repo/commits" {
+			if err := json.NewEncoder(w).Encode(GITHUB_COMMITS); err != nil {
+				// should never happen
+				t.Fatalf("can't encode GITHUB_COMMITS: %v", err)
+			}
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == "/repos/owner/test-repo/git/refs/tags" {
+			if err := json.NewEncoder(w).Encode(GITHUB_TAGS); err != nil {
+				// should never happen
+				t.Fatalf("can't encode GITHUB_TAGS: %v", err)
+			}
+			return
+		}
+		if r.Method == "POST" && r.URL.Path == "/repos/owner/test-repo/releases" {
+			var data map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+				t.Fatalf("can't decode release post: %v", err)
+			}
+			r.Body.Close()
+			if string(data["tag_name"]) != "\"v2.0.0\"" {
+				http.Error(w, "invalid tag name", http.StatusBadRequest)
+				return
+			}
+			fmt.Fprint(w, "{}")
+			return
+		}
+		http.Error(w, "invalid route", http.StatusNotImplemented)
 	}
-	http.Error(w, "invalid route", http.StatusNotImplemented)
 }
 
 func getNewTestRepo(t *testing.T) (*Repository, *httptest.Server) {
@@ -90,7 +103,7 @@ func getNewTestRepo(t *testing.T) (*Repository, *httptest.Server) {
 		t.Fatal(err)
 		return nil, nil
 	}
-	ts := httptest.NewServer(http.HandlerFunc(githubHandler))
+	ts := httptest.NewServer(githubHandler(t))
 	repo.Client.BaseURL, _ = url.Parse(ts.URL + "/")
 	return repo, ts
 }
@@ -179,30 +192,40 @@ func TestCreateRelease(t *testing.T) {
 	newVersion, _ := semver.NewVersion("2.0.0")
 	err := repo.CreateRelease([]*Commit{}, &Release{}, newVersion, "")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to create new release: %v", err)
 	}
 }
 
 func TestCalculateChange(t *testing.T) {
 	commits := []*Commit{
-		{SHA: "a", Change: Change{true, false, false, false}},
-		{SHA: "b", Change: Change{false, true, false, false}},
-		{SHA: "c", Change: Change{false, false, true, false}},
+		{SHA: "a", Change: Change{Major: true}},
+		{SHA: "b", Change: Change{Minor: true}},
+		{SHA: "c", Change: Change{Patch: true}},
 	}
 	change := CalculateChange(commits, &Release{})
 	if !change.Major || !change.Minor || !change.Patch {
-		t.Fail()
+		t.Errorf("expect major+minor+patch to accumulate all 3, got: %#v", change)
 	}
 	change = CalculateChange(commits, &Release{SHA: "a"})
-	if change.Major || change.Minor || change.Patch {
-		t.Fail()
-	} else if !change.NoChange {
-		t.Fail()
+	if change.Major || change.Minor || change.Patch || !change.NoChange {
+		t.Errorf("expect change from no new commits since release to be empty, got %#v", change)
 	}
 	version, _ := semver.NewVersion("1.0.0")
 	newVersion := GetNewVersion(commits, &Release{SHA: "b", Version: version}, "")
 	if newVersion.String() != "2.0.0" {
-		t.Fail()
+		t.Errorf("expect major after 1.0.0 to bump major: want 2.0.0 got %v", newVersion)
+	}
+	// always increment patch version if there are new commits
+	newVersion = GetNewVersion(
+		[]*Commit{
+			{SHA: "a", Change: Change{}},
+			{SHA: "b", Change: Change{Major: true}},
+		},
+		&Release{SHA: "b", Version: version},
+		"",
+	)
+	if newVersion.String() != "1.0.1" {
+		t.Errorf("expect chore after release to be treated as patch: want 1.0.1 got %v", newVersion)
 	}
 }
 
