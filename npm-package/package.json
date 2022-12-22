@@ -11,5 +11,5 @@
   "scripts": {
     "install": "node install.js"
   },
-  "version": "1.7.1-gitflow.4"
+  "version": "1.7.1-graphql.1"
 }

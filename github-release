@@ -10,12 +10,15 @@ if [ ! -d bin ]; then
 	echo "Must build first" 1>&2
 	exit 1
 fi
-if [ -z "$GITHUB_TOKEN" ]; then
+if [ -z "${GITHUB_TOKEN:-}" ]; then
 	read -s -p 'GitHub Token (silent)> ' GITHUB_TOKEN
-	export GITHUB_TOKEN
 fi
 
-git push
-git push --tags
+# only set the token for invoking `ghr`, don't use it for push as it
+# probably doesn't have permissions
 
-ghr -u 6RiverSystems -r go-semantic-release v$(cat .version) ./bin/
+GITHUB_TOKEN= git push
+# only push the tag we are releasing
+GITHUB_TOKEN= git push origin v$(cat .version)
+
+GITHUB_TOKEN="$GITHUB_TOKEN" ghr -u 6RiverSystems -r go-semantic-release v$(cat .version) ./bin/

@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver"
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v48/github"
+	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
 
@@ -55,10 +56,11 @@ func (r Releases) Swap(i, j int) {
 }
 
 type Repository struct {
-	Owner  string
-	Repo   string
-	Ctx    context.Context
-	Client *github.Client
+	Owner      string
+	Repo       string
+	Ctx        context.Context
+	GQLClient  *githubv4.Client
+	RESTClient *github.Client
 }
 
 func NewRepository(ctx context.Context, slug, token string) (*Repository, error) {
@@ -70,24 +72,42 @@ func NewRepository(ctx context.Context, slug, token string) (*Repository, error)
 	repo.Owner = splited[0]
 	repo.Repo = splited[1]
 	repo.Ctx = ctx
-	repo.Client = github.NewClient(oauth2.NewClient(ctx, oauth2.StaticTokenSource(
+	oauthClient := oauth2.NewClient(ctx, oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
-	)))
+	))
+	repo.GQLClient = githubv4.NewClient(oauthClient)
+	repo.RESTClient = github.NewClient(oauthClient)
 	return repo, nil
 }
 
-func (repo *Repository) GetInfo() (string, bool, error) {
-	r, _, err := repo.Client.Repositories.Get(repo.Ctx, repo.Owner, repo.Repo)
-	if err != nil {
-		return "", false, err
-	}
-	return r.GetDefaultBranch(), r.GetPrivate(), nil
+type repoInfoQuery struct {
+	Repository struct {
+		DefaultBranchRef struct {
+			Name githubv4.String
+		}
+		IsPrivate githubv4.Boolean
+	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
-func parseCommit(commit *github.RepositoryCommit) *Commit {
+func (repoInfoQuery) vars(repo *Repository) map[string]any {
+	return map[string]any{
+		"owner": githubv4.String(repo.Owner),
+		"name":  githubv4.String(repo.Repo),
+	}
+}
+
+func (repo *Repository) GetInfo() (string, bool, error) {
+	var q repoInfoQuery
+	if err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo)); err != nil {
+		return "", false, err
+	}
+	return string(q.Repository.DefaultBranchRef.Name), bool(q.Repository.IsPrivate), nil
+}
+
+func parseCommit(commit commitOidAndMessage) *Commit {
 	c := new(Commit)
-	c.SHA = commit.GetSHA()
-	c.Raw = strings.Split(commit.Commit.GetMessage(), "\n")
+	c.SHA = string(commit.Oid)
+	c.Raw = strings.Split(string(commit.Message), "\n")
 	found := commitPattern.FindAllStringSubmatch(c.Raw[0], -1)
 	if len(found) < 1 {
 		c.Change = Change{
@@ -99,56 +119,116 @@ func parseCommit(commit *github.RepositoryCommit) *Commit {
 	c.Scope = found[0][2]
 	c.Message = found[0][3]
 	c.Change = Change{
-		Major: breakingPattern.MatchString(commit.Commit.GetMessage()),
+		Major: breakingPattern.MatchString(string(commit.Message)),
 		Minor: c.Type == "feat",
 		Patch: c.Type == "fix",
 	}
 	return c
 }
 
-func (repo *Repository) GetCommits(branch string) ([]*Commit, error) {
-	opts := &github.CommitsListOptions{
-		SHA:         branch,
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
+type commitOidAndMessage struct {
+	Oid     githubv4.String
+	Message githubv4.String
+}
 
-	commits, _, err := repo.Client.Repositories.ListCommits(repo.Ctx, repo.Owner, repo.Repo, opts)
+type getBranchHistoryQuery struct {
+	Repository struct {
+		Ref struct {
+			Name   githubv4.String
+			Target struct {
+				Commit struct {
+					History struct {
+						Nodes    []commitOidAndMessage
+						PageInfo forwardPageInfo
+					} `graphql:"history(first: $perPage, after: $cursor)"`
+				} `graphql:"... on Commit"`
+			}
+		} `graphql:"ref(qualifiedName: $branch)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+func (getBranchHistoryQuery) vars(repo *Repository, branch string, perPage int, cursor string) map[string]any {
+	ret := map[string]any{
+		"owner":   githubv4.String(repo.Owner),
+		"name":    githubv4.String(repo.Repo),
+		"branch":  githubv4.String(branch),
+		"perPage": githubv4.Int(perPage),
+	}
+	if cursor == "" {
+		ret["cursor"] = (*githubv4.String)(nil)
+	} else {
+		ret["cursor"] = githubv4.String(cursor)
+	}
+	return ret
+}
+
+func (repo *Repository) GetCommits(branch string) ([]*Commit, error) {
+	var q getBranchHistoryQuery
+
+	err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, branch, 100, ""))
 
 	if err != nil {
 		return nil, err
 	}
 
-	ret := make([]*Commit, len(commits))
+	ret := make([]*Commit, len(q.Repository.Ref.Target.Commit.History.Nodes))
 
-	for i, commit := range commits {
+	for i, commit := range q.Repository.Ref.Target.Commit.History.Nodes {
 		ret[i] = parseCommit(commit)
 	}
+
+	// TODO: should this retrieve more pages?
 
 	return ret, nil
 }
 
+type forwardPageInfo struct {
+	EndCursor   githubv4.String
+	HasNextPage githubv4.Boolean
+}
+type listRefsQuery struct {
+	Repository struct {
+		Refs struct {
+			Nodes []struct {
+				Name   githubv4.String
+				Target struct {
+					Oid githubv4.String
+				}
+			}
+			PageInfo forwardPageInfo
+		} `graphql:"refs(refPrefix: \"refs/tags/\", first: $perPage, after: $cursor)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+func (listRefsQuery) vars(repo *Repository, perPage int, cursor string) map[string]any {
+	return map[string]any{
+		"owner":   githubv4.String(repo.Owner),
+		"name":    githubv4.String(repo.Repo),
+		"perPage": githubv4.Int(perPage),
+		"cursor":  githubv4.String(cursor),
+	}
+}
+
 func (repo *Repository) GetLatestRelease(vrange string, prerelease string) (*Release, error) {
 	allReleases := make(Releases, 0)
-	opts := &github.ReferenceListOptions{Type: "tags", ListOptions: github.ListOptions{PerPage: 100}}
+	var cursor string
 	for {
-		refs, resp, err := repo.Client.Git.ListRefs(repo.Ctx, repo.Owner, repo.Repo, opts)
-		if resp != nil && resp.StatusCode == 404 {
-			return &Release{"", &semver.Version{}}, nil
-		}
+		var q listRefsQuery
+		err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, 100, cursor))
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range refs {
-			version, err := semver.NewVersion(strings.TrimPrefix(r.GetRef(), "refs/tags/"))
+		for _, r := range q.Repository.Refs.Nodes {
+			version, err := semver.NewVersion(strings.TrimPrefix(string(r.Name), "refs/tags/"))
 			if err != nil {
 				continue
 			}
-			allReleases = append(allReleases, &Release{r.Object.GetSHA(), version})
+			allReleases = append(allReleases, &Release{string(r.Target.Oid), version})
 		}
-		if resp.NextPage == 0 {
+		if !q.Repository.Refs.PageInfo.HasNextPage {
 			break
 		}
-		opts.Page = resp.NextPage
+		cursor = string(q.Repository.Refs.PageInfo.EndCursor)
 	}
 	sort.Sort(allReleases)
 
@@ -225,7 +305,7 @@ func (repo *Repository) CreateRelease(commits []*Commit, latestRelease *Release,
 		Body:            &changelog,
 		Prerelease:      &hasPrerelease,
 	}
-	_, _, err := repo.Client.Repositories.CreateRelease(repo.Ctx, repo.Owner, repo.Repo, opts)
+	_, _, err := repo.RESTClient.Repositories.CreateRelease(repo.Ctx, repo.Owner, repo.Repo, opts)
 	if err != nil {
 		return err
 	}
