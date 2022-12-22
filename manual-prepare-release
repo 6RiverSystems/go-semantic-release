@@ -3,6 +3,10 @@
 set -euo pipefail
 
 read -p 'new version, no leading v> ' VERSION
+if [[ "$VERSION" == v* ]]; then
+	echo "read the instructions!" 1>&2
+	exit 1
+fi
 echo "$VERSION" >.version
 
 which sponge >/dev/null
