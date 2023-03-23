@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jbcpollak/strcase"
+	"github.com/iancoleman/strcase"
 	semrel "github.com/semantic-release/go-semantic-release"
 	"github.com/semantic-release/go-semantic-release/condition"
 	"github.com/semantic-release/go-semantic-release/update"
