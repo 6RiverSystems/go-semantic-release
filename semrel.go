@@ -235,7 +235,7 @@ REFS:
 		var q listRefsQuery
 		err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, 100, cursor))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed github tags query: %w", err)
 		}
 		for _, r := range q.Repository.Refs.Nodes {
 			version, err := semver.NewVersion(strings.TrimPrefix(string(r.Name), "refs/tags/"))
@@ -245,9 +245,10 @@ REFS:
 			r := &Release{string(r.Target.Oid), version}
 			log.Println("Checking version: ", r.Version.String())
 			if r.Version.Prerelease() == "" {
-				// If there is no prerelease or version range requested, its safe to
-				// stop here.
-				if prerelease == "" && verRangeConstraint == nil {
+				// this must be newer than anything with a matching pre-release, if one
+				// was requested. As long as we aren't doing a version range special
+				// case, we're done.
+				if verRangeConstraint == nil {
 					return r, nil
 				}
 				lastRelease = r
@@ -277,13 +278,13 @@ REFS:
 
 	// pretend the latest release is from verRange, applying any pre-release tag it has
 	if verRangeVer, err := semver.NewVersion(verRange); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to parse maintained version %q as semver: %w", verRange, err)
 	} else if _, verRangePre, vrHasPre := strings.Cut(verRange, "-"); !vrHasPre {
 		// verRange is just a version, no pre-release segment. Attach its version to
 		// the latest release's commit
 		return &Release{lastRelease.SHA, verRangeVer}, nil
 	} else if verWithPreRel, err := verRangeVer.SetPrerelease(verRangePre); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize pre-release for mainted version %q: %w", verRange, err)
 	} else {
 		// verRange is a version and a pre-release tag. Attach this combo to the
 		// latest release's commit

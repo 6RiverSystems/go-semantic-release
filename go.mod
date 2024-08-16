@@ -1,6 +1,6 @@
 module github.com/semantic-release/go-semantic-release
 
-go 1.19
+go 1.22
 
 require (
 	github.com/Ableton/go-travis v0.0.0-20190118170808-1d2b2c3b9155
