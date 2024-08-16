@@ -233,7 +233,6 @@ REFS:
 		// order for at least the "main" and pre-release sequences we're hunting
 		// for.
 		var q listRefsQuery
-		fmt.Printf("Fetching 100 tags after %q ...\n", cursor)
 		err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, 100, cursor))
 		if err != nil {
 			return nil, err
