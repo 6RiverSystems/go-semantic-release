@@ -166,7 +166,6 @@ func (repo *Repository) GetCommits(branch string) ([]*Commit, error) {
 	var q getBranchHistoryQuery
 
 	err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, branch, 100, ""))
-
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +195,7 @@ type listRefsQuery struct {
 				}
 			}
 			PageInfo forwardPageInfo
-		} `graphql:"refs(refPrefix: \"refs/tags/\", first: $perPage, after: $cursor)"`
+		} `graphql:"refs(refPrefix: \"refs/tags/\", first: $perPage, after: $cursor, orderBy:{field:TAG_COMMIT_DATE, direction:DESC})"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
@@ -209,11 +208,32 @@ func (listRefsQuery) vars(repo *Repository, perPage int, cursor string) map[stri
 	}
 }
 
-func (repo *Repository) GetLatestRelease(vrange string, prerelease string) (*Release, error) {
-	allReleases := make(Releases, 0)
+// GetLatestRelease returns the latest release that matches the given version
+// range or prerelease. If neither is set, it returns the latest non-prerelease.
+// If verRange is unset but prerelease is set, it returns the newer of either
+// the latest non-prerelease or the latest matching prerelease. If verRange is
+// set but prerelease is unset, it returns the latest matching version for
+// verRange. If both are set, strange things may happen. It will take the latest
+// non-prerelease or matching pre-release, and use its SHA with the verRange
+// version, resulting in a return value that may not actually exist in the repo.
+func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*Release, error) {
+	var lastRelease *Release
 	var cursor string
+	var verRangeConstraint *semver.Constraints
+	if verRange != "" {
+		var err error
+		if verRangeConstraint, err = semver.NewConstraint(verRange); err != nil {
+			return nil, err
+		}
+	}
+
+REFS:
 	for {
+		// this will do a reverse chronological sort, which SHOULD be in semrel
+		// order for at least the "main" and pre-release sequences we're hunting
+		// for.
 		var q listRefsQuery
+		fmt.Printf("Fetching 100 tags after %q ...\n", cursor)
 		err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, 100, cursor))
 		if err != nil {
 			return nil, err
@@ -223,76 +243,55 @@ func (repo *Repository) GetLatestRelease(vrange string, prerelease string) (*Rel
 			if err != nil {
 				continue
 			}
-			allReleases = append(allReleases, &Release{string(r.Target.Oid), version})
+			r := &Release{string(r.Target.Oid), version}
+			log.Println("Checking version: ", r.Version.String())
+			if r.Version.Prerelease() == "" && lastRelease == nil {
+				// If there is no prerelease or version range requested, its safe to
+				// stop here.
+				if prerelease == "" && verRangeConstraint == nil {
+					return r, nil
+				}
+				lastRelease = r
+				// assume any pre-release that we might find later is older
+				break REFS
+			} else if verRangeConstraint != nil && verRangeConstraint.Check(r.Version) {
+				// if verRange is set and matches this release, we are done
+				return r, nil
+			} else if rPreRel, _, _ := strings.Cut(r.Version.Prerelease(), "."); rPreRel == prerelease {
+				// If the last production release is newer just stop here and go with
+				// the last production release version.
+				if lastRelease != nil && r.Version.LessThan(lastRelease.Version) {
+					return lastRelease, nil
+				} else if prerelease != "" {
+					if verRangeConstraint == nil {
+						return r, nil
+					}
+					lastRelease = r
+					break REFS
+				}
+			}
 		}
+
 		if !q.Repository.Refs.PageInfo.HasNextPage {
 			break
 		}
 		cursor = string(q.Repository.Refs.PageInfo.EndCursor)
 	}
-	sort.Sort(allReleases)
 
-	var lastRelease *Release
-	for _, r := range allReleases {
-
-		log.Println("Checking version: ", r.Version.String())
-
-		if r.Version.Prerelease() == "" && lastRelease == nil {
-			lastRelease = r
-
-			// If there is no prerelease requested, its safe to stop here.
-			if prerelease == "" {
-				break
-			}
-		}
-
-		prereleaseParts := strings.Split(r.Version.Prerelease(), ".")
-
-		if prereleaseParts[0] == prerelease {
-			// If the last production release is newer just stop here and go with the last production release version.
-			if lastRelease != nil && r.Version.LessThan(lastRelease.Version) {
-				break
-			}
-
-			if prerelease != "" {
-				lastRelease = r
-				break
-			}
-		}
-	}
-
-	if vrange == "" {
-		if lastRelease != nil {
-			return lastRelease, nil
-		}
-		return &Release{"", &semver.Version{}}, nil
-	}
-
-	constraint, err := semver.NewConstraint(vrange)
-	if err != nil {
+	// pretend the latest release is from verRange, applying any pre-release tag it has
+	if verRangeVer, err := semver.NewVersion(verRange); err != nil {
 		return nil, err
-	}
-	for _, r := range allReleases {
-		if constraint.Check(r.Version) {
-			return r, nil
-		}
-	}
-
-	nver, err := semver.NewVersion(vrange)
-	if err != nil {
+	} else if _, verRangePre, vrHasPre := strings.Cut(verRange, "-"); !vrHasPre {
+		// verRange is just a version, no pre-release segment. Attach its version to
+		// the latest release's commit
+		return &Release{lastRelease.SHA, verRangeVer}, nil
+	} else if verWithPreRel, err := verRangeVer.SetPrerelease(verRangePre); err != nil {
 		return nil, err
+	} else {
+		// verRange is a version and a pre-release tag. Attach this combo to the
+		// latest release's commit
+		return &Release{lastRelease.SHA, &verWithPreRel}, nil
 	}
-
-	splitPre := strings.SplitN(vrange, "-", 2)
-	if len(splitPre) == 1 {
-		return &Release{lastRelease.SHA, nver}, nil
-	}
-
-	npver, err := nver.SetPrerelease(splitPre[1])
-	if err != nil {
-		return nil, err
-	}
-	return &Release{lastRelease.SHA, &npver}, nil
 }
 
 func (repo *Repository) CreateRelease(commits []*Commit, latestRelease *Release, newVersion *semver.Version, branch string) error {
@@ -377,7 +376,6 @@ func ApplyChange(latestVersion *semver.Version, prerelease string, change Change
 }
 
 func GetNewVersion(commits []*Commit, latestRelease *Release, prerelease string) *semver.Version {
-
 	newVersion := ApplyChange(latestRelease.Version, prerelease, CalculateChange(commits, latestRelease))
 
 	return newVersion
