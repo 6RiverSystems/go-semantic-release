@@ -245,7 +245,7 @@ REFS:
 			}
 			r := &Release{string(r.Target.Oid), version}
 			log.Println("Checking version: ", r.Version.String())
-			if r.Version.Prerelease() == "" && lastRelease == nil {
+			if r.Version.Prerelease() == "" {
 				// If there is no prerelease or version range requested, its safe to
 				// stop here.
 				if prerelease == "" && verRangeConstraint == nil {
@@ -258,11 +258,9 @@ REFS:
 				// if verRange is set and matches this release, we are done
 				return r, nil
 			} else if rPreRel, _, _ := strings.Cut(r.Version.Prerelease(), "."); rPreRel == prerelease {
-				// If the last production release is newer just stop here and go with
-				// the last production release version.
-				if lastRelease != nil && r.Version.LessThan(lastRelease.Version) {
-					return lastRelease, nil
-				} else if prerelease != "" {
+				// If the last production release was newer, we already would have
+				// stopped, so we know this is newer.
+				if prerelease != "" {
 					if verRangeConstraint == nil {
 						return r, nil
 					}
