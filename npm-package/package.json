@@ -11,5 +11,5 @@
   "scripts": {
     "install": "node install.js"
   },
-  "version": "1.7.1-gitflow.6"
+  "version": "1.7.1-dontLoadAllTags.2"
 }
