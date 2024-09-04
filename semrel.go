@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"log"
 	"regexp"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/go-github/v48/github"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -195,14 +197,15 @@ type listRefsQuery struct {
 				}
 			}
 			PageInfo forwardPageInfo
-		} `graphql:"refs(refPrefix: \"refs/tags/\", first: $perPage, after: $cursor, orderBy:{field:TAG_COMMIT_DATE, direction:DESC})"`
+		} `graphql:"refs(refPrefix: \"refs/tags/\", query: $query, first: $perPage, after: $cursor, orderBy:{field:TAG_COMMIT_DATE, direction:DESC})"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
-func (listRefsQuery) vars(repo *Repository, perPage int, cursor string) map[string]any {
+func (listRefsQuery) vars(repo *Repository, query string, perPage int, cursor string) map[string]any {
 	return map[string]any{
 		"owner":   githubv4.String(repo.Owner),
 		"name":    githubv4.String(repo.Repo),
+		"query":   githubv4.String(query),
 		"perPage": githubv4.Int(perPage),
 		"cursor":  githubv4.String(cursor),
 	}
@@ -211,84 +214,108 @@ func (listRefsQuery) vars(repo *Repository, perPage int, cursor string) map[stri
 // GetLatestRelease returns the latest release that matches the given version
 // range or prerelease. If neither is set, it returns the latest non-prerelease.
 // If verRange is unset but prerelease is set, it returns the newer of either
-// the latest non-prerelease or the latest matching prerelease. If verRange is
-// set but prerelease is unset, it returns the latest matching version for
-// verRange. If both are set, strange things may happen. It will take the latest
-// non-prerelease or matching pre-release, and use its SHA with the verRange
-// version, resulting in a return value that may not actually exist in the repo.
+// the latest non-prerelease or the latest matching prerelease.
+//
+// verRange currently must not be set, as it is no longer supported, and this
+// method will return an error if it is used.
+//
+// What it _used_ to do is: If verRange is set but prerelease is unset, it
+// returns the latest matching version for verRange. If both are set, strange
+// things may happen. It will take the latest non-prerelease or matching
+// pre-release, and use its SHA with the verRange version, resulting in a return
+// value that may not actually exist in the repo.
 func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*Release, error) {
-	var lastRelease *Release
-	var cursor string
-	var verRangeConstraint *semver.Constraints
 	if verRange != "" {
-		var err error
-		if verRangeConstraint, err = semver.NewConstraint(verRange); err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("version range constraints for maintained release are no longer supported")
 	}
 
-REFS:
-	for {
-		// this will do a reverse chronological sort, which SHOULD be in semrel
-		// order for at least the "main" and pre-release sequences we're hunting
-		// for.
-		var q listRefsQuery
-		err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, 100, cursor))
-		if err != nil {
-			return nil, fmt.Errorf("failed github tags query: %w", err)
-		}
-		for _, r := range q.Repository.Refs.Nodes {
-			version, err := semver.NewVersion(strings.TrimPrefix(string(r.Name), "refs/tags/"))
+	// run multiple searches in parallel:
+	// 1. a general search with no query filter to find the latest normal release (no pre-release component)
+	// 2. a filtered search for the given pre-release if any
+	// 3. ??? what to do with verRange?
+
+	var eg errgroup.Group
+	// locate main release
+	var lastMainRelease *Release
+	eg.Go(func() error {
+		for r, err := range repo.tags("") {
 			if err != nil {
-				continue
-			}
-			r := &Release{string(r.Target.Oid), version}
-			log.Println("Checking version: ", r.Version.String())
-			if r.Version.Prerelease() == "" {
-				// this must be newer than anything with a matching pre-release, if one
-				// was requested. As long as we aren't doing a version range special
-				// case, we're done.
-				if verRangeConstraint == nil {
-					return r, nil
-				}
-				lastRelease = r
-				// assume any pre-release that we might find later is older
-				break REFS
-			} else if verRangeConstraint != nil && verRangeConstraint.Check(r.Version) {
-				// if verRange is set and matches this release, we are done
-				return r, nil
-			} else if rPreRel, _, _ := strings.Cut(r.Version.Prerelease(), "."); rPreRel == prerelease {
-				// If the last production release was newer, we already would have
-				// stopped, so we know this is newer.
-				if prerelease != "" {
-					if verRangeConstraint == nil {
-						return r, nil
-					}
-					lastRelease = r
-					break REFS
-				}
+				return err
+			} else if r.Version.Prerelease() == "" {
+				log.Println("Found latest release version: ", r.Version.String())
+				lastMainRelease = r
+				break
 			}
 		}
-
-		if !q.Repository.Refs.PageInfo.HasNextPage {
-			break
-		}
-		cursor = string(q.Repository.Refs.PageInfo.EndCursor)
+		return nil
+	})
+	var lastPreRelease *Release
+	if prerelease != "" {
+		// locate pre-release
+		eg.Go(func() error {
+			for r, err := range repo.tags(prerelease) {
+				// this will often find some false positives that we need to skip over
+				if err != nil {
+					return err
+				} else if rPreRel, _, _ := strings.Cut(r.Version.Prerelease(), "."); rPreRel == prerelease {
+					log.Println("Found latest matching pre-release version: ", r.Version.String())
+					lastPreRelease = r
+					break
+				}
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 
-	// pretend the latest release is from verRange, applying any pre-release tag it has
-	if verRangeVer, err := semver.NewVersion(verRange); err != nil {
-		return nil, fmt.Errorf("unable to parse maintained version %q as semver: %w", verRange, err)
-	} else if _, verRangePre, vrHasPre := strings.Cut(verRange, "-"); !vrHasPre {
-		// verRange is just a version, no pre-release segment. Attach its version to
-		// the latest release's commit
-		return &Release{lastRelease.SHA, verRangeVer}, nil
-	} else if verWithPreRel, err := verRangeVer.SetPrerelease(verRangePre); err != nil {
-		return nil, fmt.Errorf("failed to initialize pre-release for mainted version %q: %w", verRange, err)
-	} else {
-		// verRange is a version and a pre-release tag. Attach this combo to the
-		// latest release's commit
-		return &Release{lastRelease.SHA, &verWithPreRel}, nil
+	if prerelease == "" {
+		return lastMainRelease, nil
+	}
+
+	if lastPreRelease != nil {
+		// if we found both a pre-release and default branch release tag, we need to
+		// see which is newer
+		if lastMainRelease == nil {
+			return lastPreRelease, nil
+		} else if lastPreRelease.Version.GreaterThan(lastMainRelease.Version) {
+			log.Println("Last pre-release version is higher than last main release")
+			return lastPreRelease, nil
+		}
+	}
+	return lastMainRelease, nil
+}
+
+// tags generates a sequence of Release objects built from tags that match the
+// given query string (which may be empty) in reverse chronological order by
+// commit date.
+func (repo *Repository) tags(query string) iter.Seq2[*Release, error] {
+	return func(yield func(*Release, error) bool) {
+		var cursor string
+		for {
+			var q listRefsQuery
+			err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, query, 100, cursor))
+			if err != nil {
+				yield(nil, err)
+				break
+			}
+			for _, n := range q.Repository.Refs.Nodes {
+				version, err := semver.NewVersion(strings.TrimPrefix(string(n.Name), "refs/tags/"))
+				if err != nil {
+					// silently ignore non-semver tags
+					continue
+				}
+				r := &Release{string(n.Target.Oid), version}
+				if !yield(r, nil) {
+					break
+				}
+			}
+			if !q.Repository.Refs.PageInfo.HasNextPage {
+				break
+			}
+			cursor = string(q.Repository.Refs.PageInfo.EndCursor)
+		}
 	}
 }
 
