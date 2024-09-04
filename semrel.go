@@ -293,26 +293,28 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 func (repo *Repository) tags(query string) iter.Seq2[*Release, error] {
 	return func(yield func(*Release, error) bool) {
 		var cursor string
+	PAGES:
 		for {
 			var q listRefsQuery
 			err := repo.GQLClient.Query(repo.Ctx, &q, q.vars(repo, query, 100, cursor))
 			if err != nil {
 				yield(nil, err)
-				break
+				break PAGES
 			}
+		NODES:
 			for _, n := range q.Repository.Refs.Nodes {
 				version, err := semver.NewVersion(strings.TrimPrefix(string(n.Name), "refs/tags/"))
 				if err != nil {
 					// silently ignore non-semver tags
-					continue
+					continue NODES
 				}
 				r := &Release{string(n.Target.Oid), version}
 				if !yield(r, nil) {
-					break
+					break PAGES
 				}
 			}
 			if !q.Repository.Refs.PageInfo.HasNextPage {
-				break
+				break PAGES
 			}
 			cursor = string(q.Repository.Refs.PageInfo.EndCursor)
 		}
