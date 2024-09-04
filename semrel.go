@@ -238,6 +238,7 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 	// locate main release
 	var lastMainRelease *Release
 	eg.Go(func() error {
+		n := 0
 		for r, err := range repo.tags("") {
 			if err != nil {
 				return err
@@ -246,7 +247,9 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 				lastMainRelease = r
 				break
 			}
+			n++
 		}
+		log.Println("Skipped", n, "non-release versions")
 		return nil
 	})
 	var lastPreRelease *Release
@@ -254,6 +257,7 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 		// locate pre-release
 		eg.Go(func() error {
 			log.Println("Searching for pre-release version:", prerelease)
+			n := 0
 			for r, err := range repo.tags(prerelease) {
 				// this will often find some false positives that we need to skip over
 				if err != nil {
@@ -263,7 +267,9 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 					lastPreRelease = r
 					break
 				}
+				n++
 			}
+			log.Println("Skipped", n, "non-matching pre-release versions")
 			return nil
 		})
 	}
