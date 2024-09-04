@@ -242,7 +242,7 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 			if err != nil {
 				return err
 			} else if r.Version.Prerelease() == "" {
-				log.Println("Found latest release version: ", r.Version.String())
+				log.Println("Found latest release version:", r.Version.String())
 				lastMainRelease = r
 				break
 			}
@@ -253,12 +253,13 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 	if prerelease != "" {
 		// locate pre-release
 		eg.Go(func() error {
+			log.Println("Searching for pre-release version:", prerelease)
 			for r, err := range repo.tags(prerelease) {
 				// this will often find some false positives that we need to skip over
 				if err != nil {
 					return err
 				} else if rPreRel, _, _ := strings.Cut(r.Version.Prerelease(), "."); rPreRel == prerelease {
-					log.Println("Found latest matching pre-release version: ", r.Version.String())
+					log.Println("Found latest matching pre-release version:", r.Version.String())
 					lastPreRelease = r
 					break
 				}
