@@ -289,6 +289,8 @@ func (repo *Repository) GetLatestRelease(verRange string, prerelease string) (*R
 		} else if lastPreRelease.Version.GreaterThan(lastMainRelease.Version) {
 			log.Println("Last pre-release version is higher than last main release")
 			return lastPreRelease, nil
+		} else {
+			log.Println("Last main release version is higher than last pre-release")
 		}
 	}
 	return lastMainRelease, nil
